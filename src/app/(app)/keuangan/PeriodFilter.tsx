@@ -1,11 +1,12 @@
 // Filter periode + cabang untuk laporan keuangan — form GET biasa (tanpa JS).
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { InputTampil } from "@/components/GerbangLaporan";
 
 type Branch = { id: string; name: string };
 
 export function PeriodFilter({
-  basePath, dari, sampai, cabang, branches, tanggalOnly, unitPresets, hidden,
+  basePath, dari, sampai, cabang, branches, tanggalOnly, unitPresets, hidden, tambahan, aktifTambahan,
 }: {
   basePath: string;
   dari?: string;
@@ -17,8 +18,12 @@ export function PeriodFilter({
   /** Parameter lain yang harus ikut terbawa saat filter diterapkan (mis. akun
       yang sedang dibuka di buku besar — tanpa ini rinciannya tertutup sendiri). */
   hidden?: Record<string, string>;
+  /** Kontrol tambahan di dalam form (mis. pilihan Tampilan akun), sebelum tombol Tampilkan. */
+  tambahan?: ReactNode;
+  /** True bila kontrol tambahan sedang tidak bawaan, supaya tombol Reset ikut muncul. */
+  aktifTambahan?: boolean;
 }) {
-  const aktif = dari || sampai || cabang;
+  const aktif = dari || sampai || cabang || aktifTambahan;
   return (
     <form method="get" action={basePath} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 12 }}>
       {Object.entries(hidden ?? {}).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
@@ -52,6 +57,7 @@ export function PeriodFilter({
           </select>
         </div>
       )}
+      {tambahan}
       <button type="submit" className="btn-def" style={{ padding: "7px 14px", fontSize: 11 }}>
         <i className="ti ti-filter" /> Tampilkan
       </button>

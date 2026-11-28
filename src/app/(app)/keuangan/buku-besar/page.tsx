@@ -3,7 +3,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances } from "@/lib/ledger";
+import { PARAM_TAMPILAN_AKUN, getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances, parseTampilanAkun, saringAkunTampil } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { NoDok } from "@/components/NoDok";
@@ -14,15 +14,26 @@ import { nomorDokumenJurnal } from "@/lib/tautan-dokumen";
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string; tampil?: string }> }) {
+export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string; tampil?: string; tampilan?: string }> }) {
   const sp = await searchParams;
   const { akun, dari, sampai, cabang } = sp;
   // A1 (meeting 12 Nov 2026): saldo seluruh akun & mutasi baru dibaca setelah Tampilkan ditekan.
   const siap = laporanDiminta(sp);
+  // Tampilan akun: bawaan hanya akun yang ada angkanya; `?tampilan=semua` membuka seluruh akun.
+  const tampilan = parseTampilanAkun(sp[PARAM_TAMPILAN_AKUN]);
   const supabase = await createClient();
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name, type", { count: "exact" }).order("name"));
   const formFilter = <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets
-    hidden={akun ? { akun } : undefined} />;
+    hidden={akun ? { akun } : undefined} aktifTambahan={tampilan === "semua"}
+    tambahan={(
+      <div>
+        <label className="flab" htmlFor="tampilan-akun">Tampilan akun</label>
+        <select id="tampilan-akun" className="fi" name={PARAM_TAMPILAN_AKUN} defaultValue={tampilan} style={{ width: 220 }}>
+          <option value="berangka">Hanya akun yang ada angkanya</option>
+          <option value="semua">Semua akun</option>
+        </select>
+      </div>
+    )} />;
 
   if (!siap) {
     return (
@@ -57,6 +68,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   const pakaiAwal = !!dari;
   const awalOf = (id: string) => openings.get(id) ?? 0;
 
+  // Total & status seimbang selalu dari SEMUA akun; penyaringan di bawah hanya memengaruhi baris yang tampil.
   const totalDebit = balances.reduce((a, b) => a + b.debit, 0);
   const totalKredit = balances.reduce((a, b) => a + b.credit, 0);
   const seimbang = Math.round(totalDebit) === Math.round(totalKredit);
@@ -65,12 +77,15 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   const ledger = selected ? await getAccountLedger(supabase as never, selected.code, filter) : [];
   // Saldo akun sebelum tanggal awal filter — titik mulai kolom saldo berjalan.
   const saldoAwal = selected ? await getAccountOpening(supabase as never, selected.code, filter) : 0;
+  const barisTampil = saringAkunTampil(balances, awalOf, tampilan, selected?.code);
   const qs = (extra: string) => {
     const parts = [
       dari ? `dari=${dari}` : "",
       sampai ? `sampai=${sampai}` : "",
       cabang ? `cabang=${encodeURIComponent(cabang)}` : "",
       extra,
+      // Pilihan tampilan akun ikut terbawa di tautan; bawaan (berangka) tidak perlu ditulis.
+      tampilan === "semua" ? `${PARAM_TAMPILAN_AKUN}=semua` : "",
       // Tautan di dalam laporan yang sudah tampil tetap membawa tampil=1.
       `${PARAM_TAMPIL}=1`,
     ].filter(Boolean);
@@ -93,13 +108,18 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
       <div className="crm-sec">
         <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc={pakaiAwal ? "Saldo seluruh akun: saldo awal sebelum periode, mutasi debit/kredit dalam periode, dan saldo akhir." : "Saldo seluruh akun (neraca saldo / trial balance)."} />
         {formFilter}
+        <div data-tampilan-akun-catatan style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>
+          {tampilan === "semua"
+            ? `Menampilkan semua ${balances.length} akun.`
+            : `Menampilkan ${barisTampil.length} dari ${balances.length} akun (akun tanpa angka disembunyikan; pilih "Semua akun" untuk melihat semuanya). Total di bawah tetap dihitung dari semua akun.`}
+        </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
               <tr><th>Kode</th><th>Nama Akun</th><th>Tipe</th>{pakaiAwal && <th style={{ textAlign: "right" }}>Saldo Awal</th>}<th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>{pakaiAwal ? "Saldo Akhir" : "Saldo"}</th><th /></tr>
             </thead>
             <tbody>
-              {balances.map((b) => (
+              {barisTampil.map((b) => (
                 <tr key={b.code} style={{ background: selected?.code === b.code ? "rgba(217,119,87,.06)" : undefined }}>
                   <td style={{ fontFamily: "monospace", fontSize: 11, color: "var(--tm)" }}>{b.code}</td>
                   <td style={{ fontSize: 12 }}>{b.name}</td>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances, nilaiSeksi } from "../ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances, nilaiSeksi, adaAngka, akunAdaAngka, parseTampilanAkun, saringAkunTampil, PARAM_TAMPILAN_AKUN } from "../ledger";
 
 // Mock supabase minimal: coa_accounts tetap, journal_lines difilter oleh chain gte/lte/eq/in
 // persis seperti fetchLines() memanggilnya (query-builder chainable + thenable).
@@ -272,5 +272,75 @@ describe("Baris jurnal per akun lewat RPC ledger_account_lines", () => {
     await expect(getAccountLedger(gagal.client, "510001")).rejects.toThrow("statement timeout");
     const bukanDaftar = klien(() => ({ data: {}, error: null }));
     await expect(getAccountLedger(bukanDaftar.client, "510001")).rejects.toThrow("baris jurnal tidak tersedia");
+  });
+});
+
+describe("tampilan akun Ringkasan Buku Besar (semua / hanya yang ada angkanya)", () => {
+  it("memakai param `tampilan`, bukan `tampil` milik gerbang laporan", () => {
+    expect(PARAM_TAMPILAN_AKUN).toBe("tampilan");
+  });
+
+  it("parseTampilanAkun: bawaan ringkas, hanya `semua` persis yang membuka seluruh akun", () => {
+    expect(parseTampilanAkun(undefined)).toBe("berangka");
+    expect(parseTampilanAkun("")).toBe("berangka");
+    expect(parseTampilanAkun("berangka")).toBe("berangka");
+    expect(parseTampilanAkun("ngawur")).toBe("berangka");
+    expect(parseTampilanAkun("SEMUA")).toBe("berangka");
+    expect(parseTampilanAkun("semua")).toBe("semua");
+    expect(parseTampilanAkun(["semua", "berangka"])).toBe("semua");
+    expect(parseTampilanAkun(["berangka", "semua"])).toBe("berangka");
+  });
+
+  it("adaAngka: nol, -0 dan sisa pecahan di bawah Rp 0,5 dianggap nol (sama dengan tampilan Rp -0)", () => {
+    expect(adaAngka(0)).toBe(false);
+    expect(adaAngka(-0)).toBe(false);
+    expect(adaAngka(0.4)).toBe(false);
+    expect(adaAngka(-0.4)).toBe(false);
+    expect(Math.round(-0.4)).toBe(-0); // bukti: inilah asal "Rp -0" di layar
+    expect(adaAngka(1)).toBe(true);
+    expect(adaAngka(-1)).toBe(true);
+    expect(adaAngka(0.6)).toBe(true);
+    expect(adaAngka(-0.6)).toBe(true);
+    expect(adaAngka(Number.NaN)).toBe(true);
+  });
+
+  it("akunAdaAngka: salah satu dari Saldo Awal, Debit, Kredit, Saldo Akhir cukup", () => {
+    expect(akunAdaAngka({ debit: 0, credit: 0, saldo: 0 })).toBe(false);
+    expect(akunAdaAngka({ debit: -0, credit: 0, saldo: -0 }, -0)).toBe(false);
+    expect(akunAdaAngka({ debit: 0, credit: 0, saldo: 0 }, 500)).toBe(true); // hanya saldo awal
+    expect(akunAdaAngka({ debit: 10, credit: 0, saldo: 0 })).toBe(true); // hanya debit
+    expect(akunAdaAngka({ debit: 0, credit: 10, saldo: 0 })).toBe(true); // hanya kredit
+    expect(akunAdaAngka({ debit: 0, credit: 0, saldo: 7 })).toBe(true); // hanya saldo akhir
+    // debit = kredit dan saldo awal ditutup mutasi: saldo akhir 0 tapi Debit/Kredit/Awal tetap ada angka
+    expect(akunAdaAngka({ debit: 100, credit: 600, saldo: -500 }, 500)).toBe(true);
+    // pecahan kecil di semua kolom -> nol
+    expect(akunAdaAngka({ debit: 0.2, credit: 0.3, saldo: -0.1 }, 0.1)).toBe(false);
+  });
+
+  const akun = [
+    { id: "a", code: "100", debit: 0, credit: 0, saldo: 0 },
+    { id: "b", code: "110", debit: 50, credit: 0, saldo: 50 },
+    { id: "c", code: "120", debit: -0, credit: 0, saldo: -0 },
+    { id: "d", code: "130", debit: 0, credit: 0, saldo: 0 }, // hanya saldo awal
+    { id: "h", code: "100000", debit: 0, credit: 0, saldo: 0 }, // header tanpa angka
+  ];
+  const awal = (id: string) => (id === "d" ? 1000 : 0);
+
+  it("saringAkunTampil: `semua` mengembalikan seluruh akun apa adanya", () => {
+    expect(saringAkunTampil(akun, awal, "semua")).toBe(akun);
+  });
+
+  it("saringAkunTampil: `berangka` membuang akun nol (termasuk header nol), urutan tetap", () => {
+    expect(saringAkunTampil(akun, awal, "berangka").map((x) => x.code)).toEqual(["110", "130"]);
+  });
+
+  it("saringAkunTampil: akun yang sedang dibuka tetap tampil walau nol", () => {
+    expect(saringAkunTampil(akun, awal, "berangka", "100").map((x) => x.code)).toEqual(["100", "110", "130"]);
+  });
+
+  it("saringAkunTampil tidak mengubah data masukan", () => {
+    const salinan = structuredClone(akun);
+    saringAkunTampil(akun, awal, "berangka", "120");
+    expect(akun).toEqual(salinan);
   });
 });
