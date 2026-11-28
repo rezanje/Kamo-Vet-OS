@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
@@ -210,9 +211,9 @@ export default async function FakturBaruPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian/faktur" className="back-btn">
+        <BackLink href="/pembelian/faktur" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Buat Faktur Pembelian</span>
       </div>

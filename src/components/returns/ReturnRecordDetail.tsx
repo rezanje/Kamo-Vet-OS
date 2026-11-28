@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { DocumentLink } from "@/components/RelatedDocuments";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -45,7 +46,7 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
   const canCorrect = owner && !record.voided_at && provenance.data && !payoutUnknown && !payout;
   const journals = (provenance.data?.snapshot?.journals ?? []) as { id: string; no_jurnal: string }[];
   return <>
-    <Link className="back-btn" href={base}>Kembali ke daftar retur</Link>
+    <BackLink className="back-btn" href={base}>Kembali ke daftar retur</BackLink>
     <h2>{record.no_retur}</h2>
     {error && <div className="p2ban" role="alert">{error}</div>}
     {success && <div className="p2ban" role="status">Koreksi tersimpan. Dokumen asal dan audit tetap tersedia.</div>}

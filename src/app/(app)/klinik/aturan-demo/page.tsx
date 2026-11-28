@@ -1,5 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { METODE_BAYAR } from "@/lib/kas-akun";
@@ -13,7 +13,7 @@ export default async function DemoPolicyPage({ searchParams }: { searchParams: P
       .eq("is_active",true).eq("is_header",false).in("type",["PENDAPATAN","BEBAN"]).order("code"), searchParams,
   ]);
   return <>
-    <div className="pg-h"><h1>Aturan Klinik DEMO</h1><Link href="/klinik/antrian" className="btn-def">Kembali ke klinik</Link></div>
+    <div className="pg-h"><h1>Aturan Klinik DEMO</h1><BackLink href="/klinik/antrian" className="btn-def">Kembali ke klinik</BackLink></div>
     {params.error && <div className="p2ban" role="alert">{params.error}</div>}
     {params.success && <div className="p2ban">Versi baru tersimpan untuk checkout berikutnya.</div>}
     <div className="card" style={{maxWidth:760}}>

@@ -1,5 +1,5 @@
 import { PreservedForm } from "@/components/LocalTransactionDraft";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -69,7 +69,7 @@ export default async function OpnameBaruPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <Link href="/pos/opname" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href="/pos/opname" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Buat Perintah Stok Opname</span>
       </div>

@@ -1,5 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_REPRODUKSI } from "@/lib/anabul";
 import { SecHeader } from "@/components/SecHeader";
@@ -30,9 +30,9 @@ export default async function TambahAnabulPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/crm/pelanggan" className="back-btn">
+        <BackLink href="/crm/pelanggan" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Tambah Anabul Baru</span>
       </div>
@@ -168,7 +168,7 @@ export default async function TambahAnabulPage({
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-          <Link href="/crm/pelanggan" className="btn-def">Batal</Link>
+          <BackLink href="/crm/pelanggan" className="btn-def">Batal</BackLink>
           <button type="submit" className="btn-acc">Simpan Anabul</button>
         </div>
       </form>

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -66,7 +66,7 @@ export default async function KaryawanTanpaCabangPage() {
 
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-      <Link href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</Link>
+      <BackLink href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</BackLink>
       <span style={{ color: "var(--td)" }}>·</span>
       <span style={{ fontSize: 13, fontWeight: 500 }}>Karyawan tanpa cabang</span>
     </div>

@@ -1,5 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
@@ -83,7 +83,7 @@ export async function PengeluaranDetail({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href={kembaliHref} className="back-btn"><i className="ti ti-arrow-left" /> {kembaliLabel}</Link>
+        <BackLink href={kembaliHref} className="back-btn"><i className="ti ti-arrow-left" /> {kembaliLabel}</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Detail Pengeluaran</span>
       </div>

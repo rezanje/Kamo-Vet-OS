@@ -1,5 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
@@ -128,9 +128,9 @@ export default async function DiskonGolonganPage({
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <Link href="/crm/kategori-pelanggan" className="btn-def" style={{ textDecoration: "none" }}>
+        <BackLink href="/crm/kategori-pelanggan" className="btn-def" style={{ textDecoration: "none" }}>
           Kembali ke daftar golongan
-        </Link>
+        </BackLink>
       </div>
     </MasterPage>
   );

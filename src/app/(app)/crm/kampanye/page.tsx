@@ -1,5 +1,6 @@
 import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -58,7 +59,7 @@ export default async function KodeKampanyePage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Kode Kampanye</span>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 11 }}>
-        <Link href="/crm/promo" className="back-btn"><i className="ti ti-speakerphone" /> Promo</Link>
+        <BackLink href="/crm/promo" className="back-btn"><i className="ti ti-speakerphone" /> Promo</BackLink>
         <Link href="/crm/voucher" className="back-btn"><i className="ti ti-ticket" /> Kode Voucher</Link>
         <Link href="/crm/kampanye" className="back-btn" style={{ background: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe", fontWeight: 700 }}>
           <i className="ti ti-tag" /> Kode Kampanye

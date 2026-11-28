@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { readCompleteList } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
@@ -25,7 +25,7 @@ export default async function VariantFamilyPage({ searchParams }: { searchParams
   const boleh = profile?.is_active === true && (profile.role === "OWNER" || isAdminRole(profile.role));
   return (
     <>
-      <div style={{ marginBottom: 4 }}><Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</Link></div>
+      <div style={{ marginBottom: 4 }}><BackLink href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</BackLink></div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#f3f0ff", display: "flex", alignItems: "center", justifyContent: "center" }}><i className="ti ti-packages" style={{ fontSize: 22, color: "#7c3aed" }} /></div>
         <div><div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>KELUARGA VARIAN</div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Kelompok tampilan untuk beberapa SKU mandiri</div></div>

@@ -1,6 +1,7 @@
 import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -75,7 +76,7 @@ export default async function DetailAsetPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan/aset" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href="/keuangan/aset" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{aset.nama}</span>
         {dilepas && <span className="bge x">Sudah dilepas</span>}

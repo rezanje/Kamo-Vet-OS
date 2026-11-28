@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { readCompleteList } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
@@ -23,7 +23,7 @@ export default async function KatalogRacikanPage({ searchParams }: {
     .eq("is_compound_material",true).order("name").order("id").range(from,to),"Bahan baku resep resmi",{maxRows:null});
   return <>
     <div style={{ marginBottom: 12 }}>
-      <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
+      <BackLink href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</BackLink>
     </div>
     <div className="crm-sec">
       <SecHeader num="01" title="KATALOG RACIKAN RESMI" desc="OWNER/ADMIN menerbitkan revisi; resep lama tetap memakai versi saat dibuat." />

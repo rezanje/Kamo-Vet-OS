@@ -1,7 +1,7 @@
 import { isAdminOnline } from "@/lib/admin-online";
 import { randomUUID } from "node:crypto";
 import { branchDisplayName } from "@/lib/branch-display";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { SecHeader } from "@/components/SecHeader";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { allowedBranchIds } from "@/lib/branch-access";
@@ -15,7 +15,7 @@ import { terapkanAksesAkun } from "@/lib/akses-akun";
 import { editableRole, parseRoleAccessConfig } from "@/lib/role-access-catalog";
 
 const BACK = "/pengaturan/pengguna";
-const back = <Link href={BACK} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke daftar pengguna</Link>;
+const back = <BackLink href={BACK} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke daftar pengguna</BackLink>;
 type Client = Awaited<ReturnType<typeof assertMasterAdmin>>;
 type Audit = { id: string; actor_id: string; created_at: string; old_role: string; new_role: string; old_branch_ids: string[]; new_branch_ids: string[]; name_changed: boolean };
 

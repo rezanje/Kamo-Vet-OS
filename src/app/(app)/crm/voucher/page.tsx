@@ -1,5 +1,6 @@
 import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -69,9 +70,9 @@ export default async function VoucherPage({
       {/* Promo & voucher dua-duanya "potongan yang dikelola pusat" — dipasangkan
           di sini supaya tidak perlu balik ke menu CRM buat pindah antar keduanya. */}
       <div style={{ display: "flex", gap: 6, marginBottom: 11 }}>
-        <Link href="/crm/promo" className="back-btn" style={tabAktif(false)}>
+        <BackLink href="/crm/promo" className="back-btn" style={tabAktif(false)}>
           <i className="ti ti-speakerphone" /> Promo
-        </Link>
+        </BackLink>
         <Link href="/crm/voucher" className="back-btn" style={tabAktif(true)}>
           <i className="ti ti-ticket" /> Kode Voucher
         </Link>

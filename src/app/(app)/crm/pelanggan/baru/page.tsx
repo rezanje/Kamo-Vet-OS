@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanPelanggan } from "./actions";
 
@@ -12,9 +12,9 @@ export default async function TambahPelangganPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/crm/pelanggan" className="back-btn">
+        <BackLink href="/crm/pelanggan" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Tambah Pelanggan Baru</span>
       </div>
@@ -91,7 +91,7 @@ export default async function TambahPelangganPage({
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-          <Link href="/crm/pelanggan" className="btn-def">Batal</Link>
+          <BackLink href="/crm/pelanggan" className="btn-def">Batal</BackLink>
           <button type="submit" className="btn-acc">Simpan Pelanggan</button>
         </div>
       </form>

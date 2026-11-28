@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
@@ -8,7 +8,7 @@ import type { PromoEditSnapshot } from "@/lib/promo-edit";
 import { PaketEditor } from "../PaketEditor";
 import { belowHppReleased, getManager, loadPaketOptions, paketReleased, PESAN_GAGAL_MUAT, PESAN_TIDAK_BERHAK } from "../loadPaketPage";
 
-const back = <Link className="back-btn" href="/crm/promo"><i className="ti ti-arrow-left" /> Kembali ke daftar promo</Link>;
+const back = <BackLink className="back-btn" href="/crm/promo"><i className="ti ti-arrow-left" /> Kembali ke daftar promo</BackLink>;
 
 export default async function PromoPaketUbahPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

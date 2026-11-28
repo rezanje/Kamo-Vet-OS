@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound, redirect } from "next/navigation";
 import { Popup } from "@/components/Popup";
 import { createClient } from "@/lib/supabase/server";
@@ -102,7 +103,7 @@ export default async function TagihanRawatInapPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Status Rawat Inap</Link>
+        <BackLink href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Status Rawat Inap</BackLink>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>

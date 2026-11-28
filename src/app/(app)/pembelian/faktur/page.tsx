@@ -1,5 +1,6 @@
 import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
@@ -65,9 +66,9 @@ export default async function FakturBeliPage({
     <>
       <PurchaseRecoveryComplete userId={userId} scope={request_scope} requestKey={request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian" className="back-btn">
+        <BackLink href="/pembelian" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Faktur Pembelian</span>
       </div>

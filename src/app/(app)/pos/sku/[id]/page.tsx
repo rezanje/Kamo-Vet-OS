@@ -1,5 +1,6 @@
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { BarangForm } from "../BarangForm";
 import { siapkanFormBarang, loadBarang } from "../data";
@@ -22,7 +23,7 @@ export default async function BarangDetailPage({
     <>
       <ActivityHistoryLink entity="items" id={id} />
       <div style={{ marginBottom: 4 }}>
-        <Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang & Jasa</Link>
+        <BackLink href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang & Jasa</BackLink>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>

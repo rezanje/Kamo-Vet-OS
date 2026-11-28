@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bacaSaldoAwal } from "./actions";
@@ -42,7 +43,7 @@ export default async function SaldoAwalPage({
             <i className="ti ti-info-circle" /> Saldo awal sudah tersimpan: {sudahAda.no_jurnal} per {fmtDate(sudahAda.tanggal)}.
             Riwayat tetap tersimpan. Koreksi saldo pembuka kas/bank tersedia melalui rekening terkait.
           </span>
-          <Link href="/kas-bank/rekening" className="back-btn">Buka rekening</Link>
+          <BackLink href="/kas-bank/rekening" className="back-btn">Buka rekening</BackLink>
         </div>
       )}
 

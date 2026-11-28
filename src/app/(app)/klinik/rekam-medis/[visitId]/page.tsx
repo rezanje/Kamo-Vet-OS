@@ -6,6 +6,7 @@ import { loadClinicPackages } from "@/lib/clinic-payment";
 import { stokPaket, type ResepPaket } from "@/lib/paket-klinik";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
 import { createClient, createClientLintasCabang } from "@/lib/supabase/server";
@@ -428,9 +429,9 @@ export default async function RekamMedisPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/klinik/antrian" className="back-btn">
+        <BackLink href="/klinik/antrian" className="back-btn">
           <i className="ti ti-arrow-left" /> Antrian
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Rekam Medis</span>
         {visit.pet_id && (

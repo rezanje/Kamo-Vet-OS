@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { documentAnchor } from "@/lib/related-document-routes";
@@ -40,7 +41,7 @@ export default async function PengirimanPage({ searchParams }: { searchParams: P
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/penjualan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href="/penjualan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Pengiriman Pesanan</span>
       </div>

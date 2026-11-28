@@ -1,11 +1,11 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { RekamMedisImportForm } from "./RekamMedisImportForm";
 
 export default async function ImporRekamMedisPage() {
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Klinik</Link>
+        <BackLink href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Klinik</BackLink>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#ecfdf5", display: "flex", alignItems: "center", justifyContent: "center" }}>

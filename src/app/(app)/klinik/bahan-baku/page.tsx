@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {readCompleteList,ListLoadError} from "@/lib/checked-list";
@@ -44,7 +45,7 @@ export default async function BahanBakuPage() {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
+        <BackLink href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Bahan Baku Racikan</span>
       </div>

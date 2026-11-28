@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { allowedBranchIds } from "@/lib/branch-access";
@@ -121,7 +122,7 @@ export default async function RiwayatTutupShiftPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pos/shift" className="back-btn"><i className="ti ti-arrow-left" /> Shift Kasir</Link>
+        <BackLink href="/pos/shift" className="back-btn"><i className="ti ti-arrow-left" /> Shift Kasir</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Riwayat Tutup Shift</span>
       </div>

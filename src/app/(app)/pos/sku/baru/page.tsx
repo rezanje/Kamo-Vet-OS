@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { BarangForm } from "../BarangForm";
 import { siapkanFormBarang } from "../data";
 
@@ -13,7 +13,7 @@ export default async function BarangBaruPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang & Jasa</Link>
+        <BackLink href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang & Jasa</BackLink>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>

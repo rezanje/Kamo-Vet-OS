@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
 import { InventoryImportWorkspace, type RecoverableMasterBatch, type RecoverableStockBatch, type RejectedMasterRows } from "./InventoryImportWorkspace";
@@ -87,7 +87,7 @@ export default async function ImporBarangPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</Link>
+        <BackLink href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</BackLink>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>

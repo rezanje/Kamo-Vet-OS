@@ -3,6 +3,7 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
 import { loadUnitOptions } from "@/lib/satuan";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -120,7 +121,7 @@ export default async function PODetailPage({
       <ActivityHistoryLink entity="purchase_orders" id={id} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Link href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+          <BackLink href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{po.no_po ?? "Purchase Order"}</span>
         </div>

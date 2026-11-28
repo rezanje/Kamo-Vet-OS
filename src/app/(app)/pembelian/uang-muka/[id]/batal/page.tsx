@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -24,7 +24,7 @@ export default async function BatalUangMukaPage({ params, searchParams }: {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("preview_purchase_advance_cascade", { p_advance_id: id });
   const preview = data as Preview | null;
-  const back = <Link href="/pembelian/uang-muka" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke uang muka</Link>;
+  const back = <BackLink href="/pembelian/uang-muka" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke uang muka</BackLink>;
   if (error || !preview) return <>{back}<div role="alert" className="p2ban">{error?.message ?? "Pratinjau pembatalan belum dapat dimuat."}</div></>;
 
   // Tanggal mundur: Owner selalu; peran lain hanya dengan izin Tanggal mundur (database memeriksa ulang di RPC).

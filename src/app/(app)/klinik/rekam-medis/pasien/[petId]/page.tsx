@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { adalahUuid, bacaMuatan, MAKS_MUATAN } from "@/lib/riwayat-pasien";
@@ -68,7 +69,7 @@ export default async function RiwayatPasienPage({
 function KembaliKeDaftar() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-      <Link href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</Link>
+      <BackLink href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</BackLink>
       <span style={{ color: "var(--td)" }}>·</span>
       <span style={{ fontSize: 12, fontWeight: 600 }}>Riwayat pasien</span>
     </div>
