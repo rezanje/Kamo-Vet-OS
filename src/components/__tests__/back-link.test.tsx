@@ -3,6 +3,7 @@ import React, { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Link from "next/link";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -90,7 +91,7 @@ describe("menu samping dan tab TIDAK memulihkan filter (hanya BackLink)", () => 
   });
   it("tautan polos tidak berubah walau catatan ada: catatan hanya dibaca resolveBackHref", () => {
     rememberListUrl(window.sessionStorage, "/pos/sku", "cari=a");
-    const html = renderToStaticMarkup(<a href="/pos/sku">Barang &amp; Jasa</a>);
+    const html = renderToStaticMarkup(<Link href="/pos/sku">Barang &amp; Jasa</Link>);
     expect(html).toBe('<a href="/pos/sku">Barang &amp; Jasa</a>');
   });
 });
