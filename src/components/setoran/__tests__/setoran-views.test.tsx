@@ -7,13 +7,13 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ storage: { from: () => ({ upload: async () => ({ error: null }) }) } }) }));
 
-import { bacaDetail } from "@/lib/setoran";
+import { bacaDetail, PESAN_HANYA_PEMUTUS } from "@/lib/setoran";
 import { SetoranDashboard } from "../SetoranDashboard";
 import { AksiPetugas, DaftarPengeluaran, DaftarTransfer, PanelPenyetuju } from "../SetoranAksi";
 
 const dasar = {
   id: "11111111-1111-4111-8111-111111111111", no_setoran: "SET-2026-0001", branch_id: "b1", cabang: "Toko A", periode_mulai: "2026-11-06", periode_selesai: "2026-11-08", jadwal: "2026-11-09", batas_jam: "12:00",
-  status: "Draft", revision: 3, penyetuju: false, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
+  status: "Draft", revision: 3, penyetuju: false, pemutus: false, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
   harian: [{ tanggal: "2026-11-06", total: 1000000 }, { tanggal: "2026-11-07", total: 1200000 }, { tanggal: "2026-11-08", total: 800000 }], shift_baru: 0, dibuat_oleh: "Rina", diajukan_oleh: null, diajukan_at: null,
   alasan_tolak: null, shift: [], pengeluaran_shift: [], pengeluaran_baris: [{ id: "p1", tanggal: "2026-11-07", kategori: "ATK", deskripsi: "kertas", jumlah: 1000000, lampiran: [{ path: "setoran/b1/n.jpg", nama: "n.jpg" }], dibuat: "", dimasukkan_oleh: "Rina", expense_id: null }],
   transfer_baris: [], riwayat: [], badge: "Belum lunas", status_periode: "Aktif", terlambat: false,
@@ -29,20 +29,20 @@ it("dashboard menampilkan angka sesuai referensi Andri", () => {
 
 it("tampilan staf TIDAK memuat lebih/kurang/kasbon/catatan penyetuju/akun jurnal, meski payload server salah mengirim bagian keuangan", () => {
   const staf = bacaDetail({ ...dasar, penyetuju: false, keuangan: keuangan("Lebih", 123456) });
-  const h = html(<><SetoranDashboard detail={staf} /><DaftarPengeluaran d={staf} basis="/kasir/setoran" kunci={kunci} urls={{}} /><DaftarTransfer d={staf} basis="/kasir/setoran" kunci={kunci} rekening={[]} penyetuju={false} urls={{}} /><AksiPetugas d={staf} basis="/kasir/setoran" kunci={kunci} /><PanelPenyetuju d={staf} basis="/kasir/setoran" kunci={kunci} karyawan={[]} role="STAFF" so={null} /></>);
+  const h = html(<><SetoranDashboard detail={staf} /><DaftarPengeluaran d={staf} basis="/kasir/setoran" kunci={kunci} urls={{}} /><DaftarTransfer d={staf} basis="/kasir/setoran" kunci={kunci} rekening={[]} penyetuju={false} pemutus={false} urls={{}} /><AksiPetugas d={staf} basis="/kasir/setoran" kunci={kunci} /><PanelPenyetuju d={staf} basis="/kasir/setoran" kunci={kunci} karyawan={[]} role="STAFF" so={null} /></>);
   for (const t of ["Lebih", "lebih", "Kurang", "kasbon", "Kasbon", "810004", "182001", "RAHASIA-CATATAN", "123456", "123.456", "Penutupan periode", "Diharapkan", "Pendapatan"]) expect(h).not.toContain(t);
   expect(h).toContain("Tambah pengeluaran"); expect(h).toContain("ajukan penutupan");
 });
 
 it("penyetuju melihat selisih lebih, tautan SO, kolom penjelasan, dan tombol setujui; tidak ada offset otomatis", () => {
-  const d = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: keuangan("Lebih", 123456) });
+  const d = bacaDetail({ ...dasar, penyetuju: true, pemutus: true, status: "Diajukan", keuangan: keuangan("Lebih", 123456) });
   const h = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={{ ada: true, no_hasil: "HSO-1", tanggal: "2026-11-05", order_id: "o1", nilai_jual_kurang: 50000 }} />);
   expect(h).toContain("Lebih Rp123.456"); expect(h).toContain("Penjelasan lebih (barang lupa input?)"); expect(h).toContain("/pos/opname/o1"); expect(h).toContain("Tidak ada offset otomatis");
   expect(h).toContain("Setujui"); expect(h).toContain("Kembalikan ke petugas");
 });
 
 it("penyetuju + kurang: tawarkan kasbon (182001) dan pembagian ke kasir; selisih besar minta konfirmasi", () => {
-  const d = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: keuangan("Kurang", -6000000) });
+  const d = bacaDetail({ ...dasar, penyetuju: true, pemutus: true, status: "Diajukan", keuangan: keuangan("Kurang", -6000000) });
   const h = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[{ id: "e1", nama: "Budi" }]} role="ADMIN" so={null} />);
   expect(h).toContain("Kurang Rp6.000.000"); expect(h).toContain("182001"); expect(h).toContain("Budi"); expect(h).toContain("Rp 5.000.000");
 });
@@ -58,12 +58,12 @@ it("setoran Diajukan tidak bisa diedit: tidak ada form tambah/hapus; Void hanya 
 
 it("penyetuju melihat peringatan dan tombol Setujui dimatikan bila ada peringatan blokir (pengeluaran melebihi kewajiban / pemisahan tugas)", () => {
   const blok = { kode: "PENGELUARAN_MELEBIHI", tingkat: "blokir", pesan: "Pengeluaran lebih besar dari kewajiban; tolak agar diperiksa." };
-  const d = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: { ...keuangan("Lebih", 1000000), peringatan: [blok, { kode: "PENGELUARAN_KEMBAR", tingkat: "peringatan", pesan: "Ada baris kembar." }, { kode: "X", tingkat: "info", pesan: "" }] } });
+  const d = bacaDetail({ ...dasar, penyetuju: true, pemutus: true, status: "Diajukan", keuangan: { ...keuangan("Lebih", 1000000), peringatan: [blok, { kode: "PENGELUARAN_KEMBAR", tingkat: "peringatan", pesan: "Ada baris kembar." }, { kode: "X", tingkat: "info", pesan: "" }] } });
   expect(d.keuangan?.peringatan.map((w) => w.kode)).toEqual(["PENGELUARAN_MELEBIHI", "PENGELUARAN_KEMBAR"]);
   const h = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
   expect(h).toContain("Tidak bisa disetujui: "); expect(h).toContain("Periksa: "); expect(h).toContain("tolak agar diperiksa");
   expect(h).toMatch(/<button[^>]*disabled[^>]*>\s*Setujui &amp; tutup periode/);
-  const aman = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: keuangan("Pas", 0) });
+  const aman = bacaDetail({ ...dasar, penyetuju: true, pemutus: true, status: "Diajukan", keuangan: keuangan("Pas", 0) });
   const h2 = html(<PanelPenyetuju d={aman} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
   expect(h2).not.toContain("peringatan-setoran"); expect(h2).not.toMatch(/<button[^>]*disabled[^>]*>\s*Setujui &amp; tutup periode/);
 });
@@ -79,4 +79,30 @@ it("staf: setoran Disetujui/Diajukan tampil Lunas / Menunggu dengan sisa 0 (basi
   const d = bacaDetail({ ...dasar, status: "Disetujui", sisa: 0, persen: 100, badge: "Lunas", status_periode: "Selesai" });
   const h = html(<SetoranDashboard detail={d} />);
   expect(h).toContain("Lunas"); expect(h).toContain("100% kewajiban sudah diselesaikan");
+});
+
+it("SETORAN-FINANCE-ONLY: Admin/Admin Umum (penyetuju tanpa pemutus) melihat bagian keuangan tetapi TIDAK ada tombol setujui/kembalikan/konfirmasi transfer", () => {
+  const trf = [{ id: "t1", tanggal: "2026-11-08", jumlah: 500000, metode: "Transfer", rekening: "BCA", lampiran: [], status: "Menunggu", dicatat_oleh: "Rina", catatan: null, alasan_tolak: null }];
+  const d = bacaDetail({ ...dasar, penyetuju: true, pemutus: false, status: "Diajukan", transfer_baris: trf, keuangan: keuangan("Lebih", 123456) });
+  expect(d.pemutus).toBe(false);
+  const panel = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="ADMIN" so={null} />);
+  expect(panel).toContain("Lebih Rp123.456"); // hak baca tetap
+  expect(panel).toContain(PESAN_HANYA_PEMUTUS); expect(panel).toContain('data-testid="hanya-pemutus"');
+  expect(panel).not.toContain("Setujui &amp; tutup periode"); expect(panel).not.toContain("Kembalikan ke petugas"); expect(panel).not.toContain("<form");
+  const tr = html(<DaftarTransfer d={d} basis="/kas-bank/setoran" kunci={kunci} rekening={[]} penyetuju={true} pemutus={false} urls={{}} />);
+  expect(tr).not.toContain("Uang sudah masuk"); expect(tr).not.toContain("Tolak"); expect(tr).toContain("hanya-pemutus-transfer");
+});
+
+it("SETORAN-FINANCE-ONLY: Owner/Finance (pemutus) tetap mendapat tombol keputusan; kunci pemutus hilang dari server = tombol tersembunyi", () => {
+  const trf = [{ id: "t1", tanggal: "2026-11-08", jumlah: 500000, metode: "Transfer", rekening: "BCA", lampiran: [], status: "Menunggu", dicatat_oleh: "Rina", catatan: null, alasan_tolak: null }];
+  const d = bacaDetail({ ...dasar, penyetuju: true, pemutus: true, status: "Diajukan", transfer_baris: trf, keuangan: keuangan("Pas", 0) });
+  const panel = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
+  expect(panel).toContain("Setujui &amp; tutup periode"); expect(panel).toContain("Kembalikan ke petugas"); expect(panel).not.toContain("hanya-pemutus");
+  const tr = html(<DaftarTransfer d={d} basis="/kas-bank/setoran" kunci={kunci} rekening={[]} penyetuju={true} pemutus={true} urls={{}} />);
+  expect(tr).toContain("Uang sudah masuk"); expect(tr).toContain("Tolak");
+  const lama = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", transfer_baris: trf, keuangan: keuangan("Pas", 0) }); // tanpa kunci pemutus
+  expect(lama.pemutus).toBe(false);
+  expect(html(<PanelPenyetuju d={lama} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />)).not.toContain("Setujui &amp; tutup periode");
+  const staf = bacaDetail({ ...dasar, penyetuju: false, pemutus: true, status: "Diajukan" }); // pemutus tanpa penyetuju tidak mungkin: tetap false
+  expect(staf.pemutus).toBe(false);
 });

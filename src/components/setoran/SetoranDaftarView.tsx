@@ -77,6 +77,7 @@ export async function SetoranDaftarView({ basis, sp }: { basis: BasisSetoran; sp
       {akses.penyetuju && inbox.length > 0 && (
         <section className="card" aria-label="Menunggu persetujuan" style={{ borderColor: "#93c5fd" }}>
           <SubJudul>Menunggu persetujuan ({inbox.length})</SubJudul>
+          {!akses.pemutus && <p style={{ fontSize: 12, color: "var(--tm)", margin: "0 0 6px" }} data-testid="inbox-hanya-lihat">Hanya Owner atau Finance yang dapat memutuskan; Anda dapat melihat saja.</p>}
           {inbox.map((b) => <div key={b.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: ".5px solid var(--bd)", fontSize: 13, flexWrap: "wrap" }}>
             <span><Link href={`${basis}/${b.id}`}>{b.no_setoran}</Link> · {b.cabang} · diajukan {b.umur_hari ?? 0} hari lalu · dibuat {b.dibuat_oleh}</span><strong>{rp(b.kewajiban)}</strong></div>)}
         </section>

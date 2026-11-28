@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { KATEGORI_PENGELUARAN } from "@/lib/kategori-pengeluaran";
 import { SubJudul } from "./gaya";
-import { bisaDiedit, bolehVoid, rp, tanggalPendek, type BasisSetoran, type DetailSetoran, type Lampiran } from "@/lib/setoran";
+import { bisaDiedit, bolehVoid, PESAN_HANYA_PEMUTUS, rp, tanggalPendek, type BasisSetoran, type DetailSetoran, type Lampiran } from "@/lib/setoran";
 import {
   ajukanSetoran, batalkanDraftSetoran, hapusPengeluaranSetoran, hapusTransferSetoran, putuskanTransferSetoran, setujuiSetoran, sinkronSetoran,
   tambahPengeluaranSetoran, tambahTransferSetoran, tolakSetoran, voidSetoran,
@@ -66,9 +66,10 @@ export function DaftarPengeluaran({ d, basis, kunci, urls }: { d: DetailSetoran;
 
 const WARNA_TR: Record<string, string> = { Menunggu: "#9a3412", Dikonfirmasi: "#15803d", Ditolak: "#991b1b" };
 
-export function DaftarTransfer({ d, basis, kunci, rekening, penyetuju, urls }: { d: DetailSetoran; basis: BasisSetoran; kunci: Kunci; rekening: Rekening[]; penyetuju: boolean; urls: UrlBukti }) {
+export function DaftarTransfer({ d, basis, kunci, rekening, penyetuju, pemutus, urls }: { d: DetailSetoran; basis: BasisSetoran; kunci: Kunci; rekening: Rekening[]; penyetuju: boolean; pemutus: boolean; urls: UrlBukti }) {
   const edit = bisaDiedit(d.status);
-  const keputusanBuka = penyetuju && (edit || d.status === "Diajukan");
+  const keputusanBuka = pemutus && (edit || d.status === "Diajukan");
+  const hanyaLihatKeputusan = penyetuju && !pemutus && (edit || d.status === "Diajukan");
   return (
     <section className="card" aria-label="Setoran ke perusahaan">
       <SubJudul>Setoran ke perusahaan</SubJudul>
@@ -84,6 +85,7 @@ export function DaftarTransfer({ d, basis, kunci, rekening, penyetuju, urls }: {
             </div>
           </div>
           {t.status === "Ditolak" && t.alasan_tolak && <div style={{ fontSize: 12, color: "#991b1b" }}>Ditolak Finance: {t.alasan_tolak}</div>}
+          {hanyaLihatKeputusan && t.status === "Menunggu" && <div data-testid="hanya-pemutus-transfer" style={{ fontSize: 12, color: "var(--tm)", marginTop: 4 }}>{PESAN_HANYA_PEMUTUS}</div>}
           {keputusanBuka && t.status === "Menunggu" && (
             <form action={putuskanTransferSetoran} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "end" }}>
               <Tersembunyi d={d} basis={basis} kunci={kunci} nama={`putus-${t.id}`} /><input type="hidden" name="transfer" value={t.id} />
@@ -160,7 +162,7 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
   const diblokir = k.peringatan.some((w) => w.tingkat === "blokir");
   return (
     <section className="card" aria-label="Penutupan periode (Finance)" style={{ borderColor: warna }}>
-      <SubJudul>Penutupan periode — khusus Finance / penyetuju</SubJudul>
+      <SubJudul>Penutupan periode — keputusan hanya oleh Owner atau Finance</SubJudul>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 8 }}>
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Harus disetor (kewajiban − pengeluaran)</div><strong>{rp(k.diharapkan)}</strong></div>
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Uang masuk terkonfirmasi</div><strong>{rp(k.transfer_dikonfirmasi)}</strong></div>
@@ -184,7 +186,8 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
         </div>
       </details>
 
-      {d.status === "Diajukan" && (
+      {d.status === "Diajukan" && !d.pemutus && <p className="p2ban" role="note" data-testid="hanya-pemutus">{PESAN_HANYA_PEMUTUS}</p>}
+      {d.status === "Diajukan" && d.pemutus && (
         <>
           {jenis === "Lebih" && so && (
             <p className="p2ban" style={{ display: "block" }}>

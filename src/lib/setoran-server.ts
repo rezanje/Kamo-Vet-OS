@@ -4,7 +4,7 @@ import { bacaDaftar, bacaDetail, bacaRekap, pesanSetoran, type BarisDaftar, type
 
 // Pembaca data Rekap Setoran. Semua lewat RPC SECURITY DEFINER yang membentuk hasil menurut peran (privasi ditegakkan di basis data).
 type Supabase = Awaited<ReturnType<typeof createClient>>;
-export type Akses = { masuk: boolean; penyetuju: boolean; void: boolean; role: string | null };
+export type Akses = { masuk: boolean; penyetuju: boolean; pemutus: boolean; void: boolean; role: string | null };
 export type FilterDaftar = { dari: string; sampai: string; branch: string | null; status: string | null; kasir: string | null };
 export const STATUS_FILTER = ["Draft", "Diajukan", "Disetujui", "Ditolak", "Void"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -12,13 +12,13 @@ const TGL = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function muatAkses(supabase: Supabase): Promise<Akses> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { masuk: false, penyetuju: false, void: false, role: null };
+  if (!user) return { masuk: false, penyetuju: false, pemutus: false, void: false, role: null };
   const [{ data }, { data: prof }] = await Promise.all([
     supabase.rpc("setoran_akses"),
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
   ]);
-  const a = (data ?? {}) as { masuk?: boolean; penyetuju?: boolean; void?: boolean };
-  return { masuk: a.masuk === true, penyetuju: a.penyetuju === true, void: a.void === true, role: (prof as { role?: string } | null)?.role ?? null };
+  const a = (data ?? {}) as { masuk?: boolean; penyetuju?: boolean; pemutus?: boolean; void?: boolean };
+  return { masuk: a.masuk === true, penyetuju: a.penyetuju === true, pemutus: a.penyetuju === true && a.pemutus === true, void: a.void === true, role: (prof as { role?: string } | null)?.role ?? null };
 }
 
 /** Saringan dari alamat: nilai tidak sah dibuang diam-diam ke bawaan (bulan berjalan). */

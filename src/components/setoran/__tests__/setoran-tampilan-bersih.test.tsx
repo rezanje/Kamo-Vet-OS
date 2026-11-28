@@ -14,7 +14,7 @@ vi.mock("@/lib/setoran-actions", () => {
 vi.mock("@/lib/setoran-server", () => ({
   STATUS_FILTER: ["Draft", "Diajukan"],
   bacaSaringan: () => ({}),
-  muatAkses: async () => ({ masuk: true, penyetuju: true, role: "FINANCE" }),
+  muatAkses: async () => ({ masuk: true, penyetuju: true, pemutus: true, role: "FINANCE" }),
   muatCabang: async () => [{ id: "b1", code: "A", name: "Toko A" }],
   muatDaftar: async () => ({ baris: [{ id: "s1", no_setoran: "SET-1", cabang: "Toko A", periode_mulai: "2026-11-06", periode_selesai: "2026-11-08", jadwal: "2026-11-09", batas_jam: "12:00", kewajiban: 3000000, sisa: 2000000, badge: "Belum lunas", status: "Draft", selisih: 0, selisih_sementara: 0, umur_hari: null, dibuat_oleh: "Rina" }] }),
   muatRekap: async () => ({ menunggu_persetujuan: 0, terlambat: 0, umur_menunggu: { hari_0_1: 0, hari_2_3: 0, hari_4_7: 0, hari_8_plus: 0 }, cabang: [], total: { jumlah: 1, kewajiban: 3, pengeluaran: 0, diharapkan: 3, disetor: 0, kurang: 0, lebih: 0 } }),
@@ -28,7 +28,7 @@ import { JUDUL_HALAMAN, SUBJUDUL } from "../gaya";
 
 const detail = bacaDetail({
   id: "11111111-1111-4111-8111-111111111111", no_setoran: "SET-2026-0001", branch_id: "b1", cabang: "Toko A", periode_mulai: "2026-11-06", periode_selesai: "2026-11-08", jadwal: "2026-11-09", batas_jam: "12:00",
-  status: "Draft", revision: 3, penyetuju: true, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
+  status: "Draft", revision: 3, penyetuju: true, pemutus: true, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
   harian: [{ tanggal: "2026-11-06", total: 1000000 }], shift_baru: 0, dibuat_oleh: "Rina", diajukan_oleh: null, diajukan_at: null, alasan_tolak: null, shift: [], pengeluaran_shift: [],
   pengeluaran_baris: [], transfer_baris: [], riwayat: [{ at: "2026-11-06T01:00:00Z", jenis: "dibuat", oleh: "Rina", catatan: null }], badge: "Belum lunas", status_periode: "Aktif", terlambat: false,
   keuangan: { diharapkan: 2000000, bersih_shift: 3000000, pengeluaran_setoran: 1000000, transfer_dikonfirmasi: 0, transfer_menunggu: 0, selisih_sementara: -2000000, selisih: null, jenis: "Kurang", penjelasan_lebih: null, penyelesaian: null, journal_id: null, pembalik_journal_id: null, catatan_keuangan: null, penanggung_otomatis: [], kasbon: [], rincian_shift: [], peringatan: [] },
@@ -54,7 +54,7 @@ async function semua() {
   const det = renderToStaticMarkup(<>
     <SetoranDashboard detail={detail} />
     <DaftarPengeluaran d={detail} basis="/kas-bank/setoran" kunci={kunci} urls={{}} />
-    <DaftarTransfer d={detail} basis="/kas-bank/setoran" kunci={kunci} rekening={[]} penyetuju urls={{}} />
+    <DaftarTransfer d={detail} basis="/kas-bank/setoran" kunci={kunci} rekening={[]} penyetuju pemutus urls={{}} />
     <AksiPetugas d={detail} basis="/kas-bank/setoran" kunci={kunci} />
     <PanelPenyetuju d={{ ...detail, status: "Diajukan" }} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />
   </>);
@@ -82,7 +82,7 @@ it("sub judul bagian seragam: lebih besar dan lebih tebal dari teks isi, judul h
   const subD = (daftar.match(/<h3 [^>]*data-subjudul[^>]*>[^<]*/g) ?? []).map((x) => x.replace(/<[^>]*>/, ""));
   for (const t of ["Rekap per cabang", "Buat periode setoran", "Daftar setoran"]) expect(subD).toContain(t);
   const subT = (det.match(/<h3 [^>]*data-subjudul[^>]*>[^<]*/g) ?? []).map((x) => x.replace(/<[^>]*>/, ""));
-  for (const t of ["Informasi periode", "Ringkasan dana setoran", "Rincian sumber uang setoran", "Pengeluaran dari dana setoran", "Setoran ke perusahaan", "Penutupan periode — khusus Finance / penyetuju"]) expect(subT).toContain(t);
+  for (const t of ["Informasi periode", "Ringkasan dana setoran", "Rincian sumber uang setoran", "Pengeluaran dari dana setoran", "Setoran ke perusahaan", "Penutupan periode — keputusan hanya oleh Owner atau Finance"]) expect(subT).toContain(t);
   // semua h3 memakai gaya sub judul (tidak ada h3 yang tertinggal 14px)
   for (const h of [daftar, det]) {
     expect((h.match(/<h3\b/g) ?? []).length).toBe((h.match(/<h3 class="setoran-subjudul"/g) ?? []).length);

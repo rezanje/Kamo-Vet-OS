@@ -19,6 +19,7 @@ export async function SetoranDetailView({ id, basis, error, success }: { id: str
     return <div className="card" role="alert"><p>{pesanSetoran(e instanceof Error ? e.message : "Setoran tidak dapat dimuat.")}</p>{kembali}</div>;
   }
   const penyetuju = akses.penyetuju && d.penyetuju;
+  const pemutus = akses.pemutus && d.pemutus;
   const kunci: Kunci = Object.fromEntries(KUNCI.map((k) => [k, crypto.randomUUID()]));
   for (const p of d.pengeluaran_baris) kunci[`hapus-${p.id}`] = crypto.randomUUID();
   for (const t of d.transfer_baris) { kunci[`hapust-${t.id}`] = crypto.randomUUID(); kunci[`putus-${t.id}`] = crypto.randomUUID(); }
@@ -42,7 +43,7 @@ export async function SetoranDetailView({ id, basis, error, success }: { id: str
       {success && <div className="p2ban" role="status" style={{ background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }}>{success}</div>}
       <SetoranDashboard detail={d} />
       <DaftarPengeluaran d={d} basis={basis} kunci={kunci} urls={urls} />
-      <DaftarTransfer d={d} basis={basis} kunci={kunci} rekening={rekening} penyetuju={penyetuju} urls={urls} />
+      <DaftarTransfer d={d} basis={basis} kunci={kunci} rekening={rekening} penyetuju={penyetuju} pemutus={pemutus} urls={urls} />
       <AksiPetugas d={d} basis={basis} kunci={kunci} />
       <PanelPenyetuju d={d} basis={basis} kunci={kunci} karyawan={karyawan} role={akses.role ?? ""} so={so} />
       {d.riwayat.length > 0 && (
