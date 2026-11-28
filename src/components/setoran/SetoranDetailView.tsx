@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { muatAkses, muatDetail, muatKaryawan, muatRekening, muatSoTerakhir } from "@/lib/setoran-server";
 import { pesanSetoran, type BasisSetoran } from "@/lib/setoran";
+import { SubJudul } from "./gaya";
 import { SetoranDashboard } from "./SetoranDashboard";
 import { AksiPetugas, DaftarPengeluaran, DaftarTransfer, PanelPenyetuju, type Kunci, type UrlBukti } from "./SetoranAksi";
 
@@ -47,7 +48,7 @@ export async function SetoranDetailView({ id, basis, error, success }: { id: str
       <PanelPenyetuju d={d} basis={basis} kunci={kunci} karyawan={karyawan} role={akses.role ?? ""} so={so} />
       {d.riwayat.length > 0 && (
         <section className="card" aria-label="Riwayat setoran">
-          <h3 style={{ fontSize: 14, marginBottom: 6 }}>Riwayat</h3>
+          <SubJudul>Riwayat</SubJudul>
           <ul style={{ margin: "0 0 0 16px", fontSize: 12.5 }}>
             {d.riwayat.map((r, i) => <li key={i}>{new Date(r.at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" })} · {r.jenis.replaceAll("_", " ")} · {r.oleh}{r.catatan ? ` — ${r.catatan}` : ""}</li>)}
           </ul>
