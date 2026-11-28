@@ -4,7 +4,8 @@ Migrasi `20261214100050_rekap_setoran.sql` (satu transaksi), layar `/kas-bank/se
 
 ## Cara pakai
 - Petugas toko: **Setoran** (menu kasir) → **Buat periode** (cabang, periode Jumat–Minggu, jadwal Senin, batas jam) → dashboard menampilkan kewajiban, pengeluaran, sudah ditransfer, sisa, progres. Di bawahnya: input **pengeluaran dari dana setoran** (tanggal sendiri, kategori, jumlah, foto nota) dan **setoran ke perusahaan** (cicilan boleh; Transfer wajib foto bukti; Serah tunai tanpa foto). Setelah semua disetor: **Selesai disetor — ajukan penutupan**.
-- Finance/Owner/Admin: kotak **Menunggu persetujuan** → buka setoran → **Uang sudah masuk** pada tiap setoran → panel **Penutupan periode** (hanya penyetuju) → **Setujui & tutup periode** atau **Kembalikan ke petugas** (dengan alasan, tanpa nominal).
+- Owner/Finance: kotak **Menunggu persetujuan** → buka setoran → **Uang sudah masuk** pada tiap setoran → panel **Penutupan periode** → **Setujui & tutup periode** atau **Kembalikan ke petugas** (dengan alasan, tanpa nominal).
+- **Siapa yang memutuskan (perubahan 28 Nov 2026, permintaan Mba Anisa):** HANYA Owner dan Finance yang dapat menyetujui/menolak setoran dan mengonfirmasi/menolak transfer (`setoran_pemutus()`). Admin dan Admin Umum tetap dapat membuat periode, mencatat pengeluaran/transfer, mengajukan, dan MELIHAT rekap/daftar/bagian keuangan (`setoran_penyetuju()` tidak berubah), tetapi tombol keputusan tidak tampil dan basis data menolak dengan `SETORAN_DITOLAK_PERAN`. Pemisahan tugas (pembuat/pengaju tidak menyetujui sendiri; pencatat tidak mengonfirmasi transfernya sendiri) tidak berubah.
 
 ## Akuntansi (semua jurnal HANYA saat setuju)
 - Pengeluaran dari dana setoran: `post_expense_atomic` per baris, beban pada tanggal barisnya, kas laci berkurang, tepat satu kali (kunci `setoran:<id baris>`).

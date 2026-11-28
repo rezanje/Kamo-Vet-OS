@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BIDANG_KEUANGAN, bacaDaftar, bacaDetail, bacaRekap, barisExcel, basisAman, bisaDiedit, bolehVoid, isPenyetuju, labelPeriode, pesanSetoran, periodeBawaan, rp, tanggalPanjang, warnaBadge } from "../setoran";
+import { BIDANG_KEUANGAN, bacaDaftar, bacaDetail, bacaRekap, barisExcel, basisAman, bisaDiedit, bolehVoid, isPemutus, isPenyetuju, labelPeriode, pesanSetoran, periodeBawaan, rp, tanggalPanjang, warnaBadge } from "../setoran";
 
 const dasar = () => ({
   id: "11111111-1111-4111-8111-111111111111", no_setoran: "SET-2026-0001", branch_id: "b1", cabang: "Toko A", periode_mulai: "2026-11-06", periode_selesai: "2026-11-08", jadwal: "2026-11-09", batas_jam: "12:00",
-  status: "Draft", revision: 3, penyetuju: false, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
+  status: "Draft", revision: 3, penyetuju: false, pemutus: false, catatan: null, kewajiban: 3000000, pengeluaran: 1000000, transfer: 0, sisa: 2000000, persen: 33,
   harian: [{ tanggal: "2026-11-06", total: 1000000 }, { tanggal: "2026-11-07", total: 1200000 }, { tanggal: "2026-11-08", total: 800000 }], shift_baru: 0, dibuat_oleh: "Rina", diajukan_oleh: null, diajukan_at: null,
   alasan_tolak: null, shift: [], pengeluaran_shift: [], pengeluaran_baris: [], transfer_baris: [], riwayat: [], badge: "Belum lunas", status_periode: "Aktif", terlambat: false,
 });
@@ -82,6 +82,17 @@ describe("peran dan tampilan", () => {
     for (const r of ["OWNER", "FINANCE", "ADMIN", "ADMIN_UMUM"]) expect(isPenyetuju(r)).toBe(true);
     for (const r of ["STAFF", "DOCTOR", "ADMIN_ONLINE", "", null, undefined]) expect(isPenyetuju(r as string)).toBe(false);
     expect(bolehVoid("OWNER")).toBe(true); expect(bolehVoid("FINANCE")).toBe(true); expect(bolehVoid("ADMIN")).toBe(false); expect(bolehVoid("ADMIN_UMUM")).toBe(false);
+  });
+  it("SETORAN-FINANCE-ONLY: pemutus (setujui/tolak/konfirmasi transfer) hanya Owner dan Finance; Admin/Admin Umum tetap penyetuju (baca)", () => {
+    for (const r of ["OWNER", "FINANCE"]) expect(isPemutus(r)).toBe(true);
+    for (const r of ["ADMIN", "ADMIN_UMUM", "STAFF", "DOCTOR", "ADMIN_ONLINE", "", null, undefined]) expect(isPemutus(r as string)).toBe(false);
+    expect(isPenyetuju("ADMIN")).toBe(true); expect(isPenyetuju("ADMIN_UMUM")).toBe(true);
+  });
+  it("bacaDetail: pemutus hanya benar bila server mengirim penyetuju dan pemutus keduanya benar", () => {
+    expect(bacaDetail({ ...dasar(), penyetuju: true, pemutus: true }).pemutus).toBe(true);
+    expect(bacaDetail({ ...dasar(), penyetuju: true, pemutus: false }).pemutus).toBe(false);
+    expect(bacaDetail({ ...dasar(), penyetuju: true }).pemutus).toBe(false);
+    expect(bacaDetail({ ...dasar(), penyetuju: false, pemutus: true }).pemutus).toBe(false);
   });
   it("rupiah, tanggal, periode", () => {
     expect(rp(3000000)).toBe("Rp3.000.000"); expect(rp(-1000000)).toBe("-Rp1.000.000");

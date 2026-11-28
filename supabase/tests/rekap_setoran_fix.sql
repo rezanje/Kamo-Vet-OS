@@ -210,7 +210,7 @@ select pg_temp.ok((select (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=10
 -- persetujuan oleh Owner (01): bukan pembuat, bukan penginput, bukan pemegang shift
 select pg_temp.appr('pA','01','ap-a');
 select pg_temp.appr('pB','01','ap-b');
-select pg_temp.appr('pC','02','ap-c',null,true,false);
+select pg_temp.appr('pC','03','ap-c',null,true,false);
 select pg_temp.ok((select r->>'penyelesaian'='Kasbon' and (r->>'selisih')::numeric=-100000 from res where name='ap-pA'),'A: disetujui kurang 100.000 -> Kasbon');
 select pg_temp.ok((select r->>'penyelesaian'='PendapatanLain' and (r->>'selisih')::numeric=50000 from res where name='ap-pB'),'B: disetujui lebih 50.000 -> 810004');
 select pg_temp.ok((select r->>'penyelesaian'='BebanPerusahaan' and (r->>'selisih')::numeric=-80000 from res where name='ap-pC'),'C: disetujui kurang 80.000 -> Beban perusahaan');
@@ -528,22 +528,24 @@ select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan
 select pg_temp.ok((select not r ?| array['peringatan','keuangan'] from res where name='dL-staf'),'M5: staf tidak melihat peringatan duplikat');
 
 -- ── 6. M4: pemisahan tugas penyetuju ─────────────────────────────────────────────────────────────
--- M: Finance 0c menginput baris pengeluaran. N: Admin 02 mencatat transfer. O: Admin 02 membuka shift. P: Finance 0c membuka shift (snapshot karyawan = 0c).
+-- M: Finance 0c menginput baris pengeluaran. N: Finance 03 mencatat transfer. O: Finance 03 membuka shift. P: Finance 0c membuka shift (snapshot karyawan = 0c).
+-- (SETORAN-FINANCE-ONLY: Admin tidak lagi penyetuju; konflik tugas diuji dengan Finance. Admin 02 ditolak lebih dulu oleh peran.)
 select pg_temp.save('sM1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c1'),'04',3,0,400000)));
 select pg_temp.save('sN1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c2'),'04',3,0,400000)));
-select pg_temp.save('sO1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c3'),'02',3,0,400000)));
+select pg_temp.save('sO1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c3'),'03',3,0,400000)));
 select pg_temp.save('sP1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c4'),'0c',3,0,400000)));
 select pg_temp.mk('pM',pg_temp.br('c1'),'04');select pg_temp.mk('pN',pg_temp.br('c2'),'04');select pg_temp.mk('pO',pg_temp.br('c3'),'04');select pg_temp.mk('pP',pg_temp.br('c4'),'04');
 select pg_temp.exps('pM','0c',3,'Operasional',40000,'m-e1');
 select pg_temp.pay('pM',360000,'Serah tunai','04','03','m-t1',2);
-select pg_temp.pay('pN',400000,'Serah tunai','02','03','n-t1',2);
+select pg_temp.pay('pN',400000,'Serah tunai','03','01','n-t1',2);
 select pg_temp.pay('pO',400000,'Serah tunai','04','03','o-t1',2);
 select pg_temp.pay('pP',400000,'Serah tunai','04','03','p-t1',2);
 select pg_temp.sub('pM','04','m-aj');select pg_temp.sub('pN','04','n-aj');select pg_temp.sub('pO','04','o-aj');select pg_temp.sub('pP','04','p-aj');
 select pg_temp.ok((select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Diajukan'),'M4: empat setoran Diajukan siap diuji');
 select pg_temp.ok(pg_temp.ra('0c',$$select public.setoran_setujui(pg_temp.sid('pM'),pg_temp.kk('m4-m1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%menginput baris pengeluaran%','M4: Finance yang menginput baris pengeluaran tidak boleh menyetujui setoran itu');
-select pg_temp.ok(pg_temp.ra('02',$$select public.setoran_setujui(pg_temp.sid('pN'),pg_temp.kk('m4-n1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%mencatat transfer%','M4: Admin yang mencatat transfer/serah tunai tidak boleh menyetujui setoran itu');
-select pg_temp.ok(pg_temp.ra('02',$$select public.setoran_setujui(pg_temp.sid('pO'),pg_temp.kk('m4-o1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%membuka atau memegang shift%','M4: Admin yang membuka shift yang masuk hitungan tidak boleh menyetujui setoran itu');
+select pg_temp.ok(pg_temp.ra('02',$$select public.setoran_setujui(pg_temp.sid('pN'),pg_temp.kk('m4-n0'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_DITOLAK_PERAN%','SETORAN-FINANCE-ONLY: Admin ditolak oleh peran sebelum pemisahan tugas');
+select pg_temp.ok(pg_temp.ra('03',$$select public.setoran_setujui(pg_temp.sid('pN'),pg_temp.kk('m4-n1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%mencatat transfer%','M4: Finance yang mencatat transfer/serah tunai tidak boleh menyetujui setoran itu');
+select pg_temp.ok(pg_temp.ra('03',$$select public.setoran_setujui(pg_temp.sid('pO'),pg_temp.kk('m4-o1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%membuka atau memegang shift%','M4: Finance yang membuka shift yang masuk hitungan tidak boleh menyetujui setoran itu');
 select pg_temp.ok(pg_temp.ra('0c',$$select public.setoran_setujui(pg_temp.sid('pP'),pg_temp.kk('m4-p1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%membuka atau memegang shift%','M4: Finance yang membuka shift yang masuk hitungan tidak boleh menyetujui');
 select pg_temp.ok((select count(*)=0 from journal_entries where source='setoran' and source_ref in(pg_temp.sid('pM')::text,pg_temp.sid('pN')::text,pg_temp.sid('pO')::text,pg_temp.sid('pP')::text)) and (select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Diajukan'),'M4: penolakan atomik (status tetap Diajukan, tanpa jurnal)');
 -- layar penyetuju: peringatan untuk yang berkonflik, tidak untuk yang lain
@@ -552,19 +554,19 @@ select pg_temp.save('dM-0c',public.setoran_detail(pg_temp.sid('pM')));
 select pg_temp.save('dP-0c',public.setoran_detail(pg_temp.sid('pP')));
 select pg_temp.as_('03');
 select pg_temp.save('dM-03',public.setoran_detail(pg_temp.sid('pM')));
-select pg_temp.as_('02');
-select pg_temp.save('dN-02',public.setoran_detail(pg_temp.sid('pN')));
-select pg_temp.save('dO-02',public.setoran_detail(pg_temp.sid('pO')));
+select pg_temp.as_('03');
+select pg_temp.save('dN-03',public.setoran_detail(pg_temp.sid('pN')));
+select pg_temp.save('dO-03',public.setoran_detail(pg_temp.sid('pO')));
 select pg_temp.as_('01');
 select pg_temp.save('dN-01',public.setoran_detail(pg_temp.sid('pN')));
 reset role;
 select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'tingkat'='blokir' and w->>'pesan' like '%menginput baris pengeluaran%') from res where name='dM-0c'),'M4: layar Finance 0c: peringatan PEMISAHAN_TUGAS (blokir) menyebut alasannya');
-select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dP-0c') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%transfer%') from res where name='dN-02') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dO-02'),'M4: peringatan PEMISAHAN_TUGAS muncul untuk konflik shift (P, O) dan transfer (N)');
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dP-0c') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%transfer%') from res where name='dN-03') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dO-03'),'M4: peringatan PEMISAHAN_TUGAS muncul untuk konflik shift (P, O) dan transfer (N)');
 select pg_temp.ok((select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS') from res where name='dM-03') and (select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS') from res where name='dN-01'),'M4: penyetuju yang tidak terlibat (03 untuk M, 01 untuk N) tidak mendapat peringatan');
 -- penyetuju yang tidak terlibat berhasil
 select pg_temp.appr('pM','03','m4-m2');
 select pg_temp.appr('pN','01','m4-n2');
-select pg_temp.appr('pO','03','m4-o2');
+select pg_temp.appr('pO','01','m4-o2');
 select pg_temp.appr('pP','03','m4-p2');
 select pg_temp.ok((select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Disetujui'),'M4: penyetuju yang tidak terlibat dapat menyetujui keempatnya');
 select pg_temp.ok((select count(*)=1 and bool_and(created_by=pg_temp.u('03')) from expenses where deskripsi like 'Setoran '||(select no_setoran from setoran where id=pg_temp.sid('pM'))||'%'),'M4: pengeluaran M dibukukan atas nama penyetuju yang sah (03)');

@@ -12,10 +12,14 @@
 export const STATUS_SETORAN = ["Draft", "Diajukan", "Disetujui", "Ditolak", "Void"] as const;
 export type StatusSetoran = (typeof STATUS_SETORAN)[number];
 
-/** Peran yang menyetujui (sama dengan basis data: setoran_penyetuju()). ADMIN_UMUM dibandingkan sebagai teks. */
+/** Peran yang MELIHAT bagian keuangan/rekap (sama dengan basis data: setoran_penyetuju()). Hak baca Admin/Admin Umum tidak berubah. ADMIN_UMUM dibandingkan sebagai teks. */
 export const PERAN_PENYETUJU = ["OWNER", "FINANCE", "ADMIN", "ADMIN_UMUM"] as const;
+/** Peran yang MEMUTUSKAN: setujui/tolak setoran, konfirmasi/tolak transfer (sama dengan basis data: setoran_pemutus()). Admin/Admin Umum tidak termasuk. */
+export const PERAN_PEMUTUS = ["OWNER", "FINANCE"] as const;
 export const PERAN_VOID = ["OWNER", "FINANCE"] as const;
 export const isPenyetuju = (role: string | null | undefined): boolean => !!role && (PERAN_PENYETUJU as readonly string[]).includes(role);
+export const isPemutus = (role: string | null | undefined): boolean => !!role && (PERAN_PEMUTUS as readonly string[]).includes(role);
+export const PESAN_HANYA_PEMUTUS = "Hanya Owner atau Finance yang dapat menyetujui atau mengembalikan setoran dan mengonfirmasi uang masuk.";
 export const bolehVoid = (role: string | null | undefined): boolean => !!role && (PERAN_VOID as readonly string[]).includes(role);
 
 /** Dua pintu masuk: back office (penyetuju & staf ber-modul) dan layar kasir. Dipakai untuk tautan dan validasi alamat kembali. */
@@ -46,7 +50,7 @@ export type KeuanganSetoran = {
 };
 export type DetailSetoran = {
   id: string; no_setoran: string; branch_id: string; cabang: string; periode_mulai: string; periode_selesai: string; jadwal: string; batas_jam: string;
-  status: StatusSetoran; revision: number; penyetuju: boolean; catatan: string | null; kewajiban: number; pengeluaran: number; transfer: number; sisa: number; persen: number;
+  status: StatusSetoran; revision: number; penyetuju: boolean; pemutus: boolean; catatan: string | null; kewajiban: number; pengeluaran: number; transfer: number; sisa: number; persen: number;
   harian: HariRincian[]; shift_baru: number; dibuat_oleh: string; diajukan_oleh: string | null; diajukan_at: string | null; alasan_tolak: string | null;
   shift: ShiftSetoran[]; pengeluaran_shift: PengeluaranShift[]; pengeluaran_baris: BarisPengeluaran[]; transfer_baris: BarisTransfer[]; riwayat: RiwayatSetoran[];
   badge: string; status_periode: string; terlambat: boolean; keuangan?: KeuanganSetoran;
@@ -92,10 +96,12 @@ export function bacaDetail(raw: unknown): DetailSetoran {
   const status = teks(raw.status, "status");
   if (!(STATUS_SETORAN as readonly string[]).includes(status)) throw new Error("Status setoran tidak dikenal.");
   const penyetuju = raw.penyetuju === true;
+  // Tanpa kunci `pemutus` (aplikasi baru, basis data lama) = tidak boleh memutuskan: tombol keputusan tersembunyi, basis data tetap yang menentukan.
+  const pemutus = penyetuju && raw.pemutus === true;
   const out: DetailSetoran = {
     id: teks(raw.id, "id"), no_setoran: teks(raw.no_setoran, "nomor"), branch_id: teks(raw.branch_id, "cabang"), cabang: teks(raw.cabang, "nama cabang"),
     periode_mulai: teks(raw.periode_mulai, "periode"), periode_selesai: teks(raw.periode_selesai, "periode"), jadwal: teks(raw.jadwal, "jadwal"), batas_jam: teks(raw.batas_jam, "batas jam"),
-    status: status as StatusSetoran, revision: num(raw.revision, "revisi"), penyetuju, catatan: teksNull(raw.catatan),
+    status: status as StatusSetoran, revision: num(raw.revision, "revisi"), penyetuju, pemutus, catatan: teksNull(raw.catatan),
     kewajiban: num(raw.kewajiban, "kewajiban"), pengeluaran: num(raw.pengeluaran, "pengeluaran"), transfer: num(raw.transfer, "transfer"),
     sisa: Math.max(0, num(raw.sisa, "sisa")), persen: Math.min(100, Math.max(0, num(raw.persen, "persen"))),
     harian: arr(raw.harian, "harian").filter(isObj).map((h) => ({ tanggal: teks(h.tanggal, "tanggal"), total: num(h.total, "total harian") })),
