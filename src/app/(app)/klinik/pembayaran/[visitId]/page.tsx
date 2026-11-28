@@ -39,6 +39,7 @@ import { bacaBolehBatalTagihan, bolehTawarkanBatalTagihan, putuskanBolehBatalTag
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
+import { punyaRombongan } from "@/lib/rombongan-cetak";
 import { perkiraanTagihan, bekalPotonganKlinik } from "@/lib/tagihan-klinik";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
@@ -303,7 +304,7 @@ export default async function PembayaranPage({
   // kunjungan, tapi kasir perlu melihat semuanya sekaligus supaya tidak ada yang
   // tertinggal dan pemiliknya tidak dipanggil dua kali.
   const rombongan = await rombonganP!;
-  const adaRombongan = (rombongan?.baris.length ?? 0) > 1;
+  const adaRombongan = punyaRombongan(rombongan?.baris);
   const ringkasan = rombongan ? ringkasTagihanRombongan(rombongan.baris) : null;
   const berikutnya = rombongan ? berikutnyaBelumSelesai(rombongan.baris, visitId) : null;
   const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
@@ -653,6 +654,10 @@ export default async function PembayaranPage({
             <Link href={`/klinik/pembayaran/${visitId}/struk-rombongan`} className="btn-def"
               style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
               <i className="ti ti-receipt" /> Struk gabungan
+            </Link>
+            <Link href={`/klinik/pembayaran/${visitId}/invoice-rombongan`} className="btn-def"
+              style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+              <i className="ti ti-file-invoice" /> Invoice gabungan
             </Link>
             {ringkasan.adaBelumDitagih && (
               <span style={{ fontSize: 10, color: "#b45309", alignSelf: "center" }}>

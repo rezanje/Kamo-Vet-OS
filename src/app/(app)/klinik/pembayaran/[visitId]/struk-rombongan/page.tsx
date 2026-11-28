@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
 import { bacaRombongan } from "@/lib/rombongan-server";
+import { idCabangKopRombongan, nomorTagihanRombongan, rincianTagihanUtuh } from "@/lib/rombongan-cetak";
 import { labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
@@ -31,6 +32,8 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   if (!rombongan) notFound();
 
   const ringkasan = ringkasTagihanRombongan(rombongan.baris);
+  // Tagihan/pembayaran yang gagal dibaca bukan "belum ditagih": dokumen ditahan.
+  if (rombongan.bacaanTagihanGagal) throw new Error("Verifikasi rincian tagihan gagal. Struk gabungan tidak dapat dicetak.");
 
   const { data: acuan } = await supabase
     .from("visits").select("branch_id, branches(name, code)").eq("id", visitId).maybeSingle();
@@ -39,9 +42,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   // Rincian tiap tagihan. Kunjungan yang belum ditagih sengaja tetap tampil sebagai
   // baris kosong — pemilik berhak tahu ada pemeriksaan yang tagihannya belum keluar.
   // Rawat inap bertahap: satu kunjungan bisa punya beberapa nomor tagihan aktif.
-  const invoiceIds = [...new Set(rombongan.baris
-    .flatMap((b) => b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []))
-    .filter(Boolean) as string[])];
+  const invoiceIds = nomorTagihanRombongan(rombongan.baris);
   const { data: invs, error: invoiceError } = invoiceIds.length
     ? await supabase
         .from("invoices")
@@ -50,11 +51,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
     : { data: [] as Record<string, unknown>[], error: null };
 
   // A failed or truncated read is not an unbilled group: withhold the receipt.
-  const requestedInvoiceNos = new Set(invoiceIds);
-  if (invoiceIds.length && (invoiceError || !Array.isArray(invs)
-    || invs.length !== invoiceIds.length
-    || new Set(invs.map(inv => inv?.invoice_no)).size !== invoiceIds.length
-    || invs.some(inv => typeof inv?.invoice_no !== "string" || !requestedInvoiceNos.has(inv.invoice_no)))) {
+  if (!rincianTagihanUtuh(invoiceIds, invs, invoiceError)) {
     throw new Error("Verifikasi rincian tagihan gagal. Struk gabungan tidak dapat dicetak.");
   }
 
@@ -66,9 +63,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const invRows = (invs ?? []) as unknown as Inv[];
   // Kop = identitas CABANG PENERBIT. Struk gabungan hanya membawa alamat/telepon bila semua tagihannya satu cabang
   // (beda cabang = hanya daftar nama seperti semula); tanpa tagihan dipakai cabang kunjungan acuan.
-  const idCabangKop = invoiceIds.length
-    ? (() => { const ids = new Set(invRows.map((i) => one(i.visits)?.branch_id ?? null)); return ids.size === 1 ? [...ids][0] : null; })()
-    : ((acuan as { branch_id?: string | null } | null)?.branch_id ?? null);
+  const idCabangKop = idCabangKopRombongan(invoiceIds, invRows, (acuan as { branch_id?: string | null } | null)?.branch_id);
   const identitas = await bacaIdentitasKop(supabase, idCabangKop);
 
   const allItems = invRows.length

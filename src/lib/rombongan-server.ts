@@ -15,6 +15,12 @@ export type Rombongan = {
   customerName: string;
   tanggal: string;              // YYYY-MM-DD (WIB)
   baris: KunjunganSerombongan[];
+  /**
+   * true = tagihan atau pembayaran rombongan GAGAL dibaca (galat atau bukan daftar). Barisnya lalu terlihat
+   * "belum ditagih" padahal belum tentu. Layar pembayaran boleh mengabaikannya; dokumen cetak gabungan
+   * (struk & invoice) wajib menahan diri — bacaan gagal bukan "belum ditagih".
+   */
+  bacaanTagihanGagal?: boolean;
 };
 
 /** Batas hari WIB dari sebuah timestamp — server bisa jalan di UTC. */
@@ -102,7 +108,7 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
   if (rows.length === 0) return null;
 
   // Tagihan aktif tiap kunjungan (yang sudah di-void tidak dihitung).
-  const { data: invs } = await supabase
+  const { data: invs, error: invsError } = await supabase
     .from("invoices")
     .select("id, visit_id, invoice_no, total, dp_amount, paid_status")
     .in("visit_id", rows.map((v) => v.id))
@@ -114,9 +120,9 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
 
   // Pelunasan piutang menyusul setelah invoice terbit — tanpa ini, tagihan DP yang
   // sudah dilunasi belakangan tetap terlihat kurang bayar di panel rombongan.
-  const { data: pays } = invRows.length
+  const { data: pays, error: paysError } = invRows.length
     ? await supabase.from("invoice_payments").select("invoice_id, amount").in("invoice_id", invRows.map((i) => i.id))
-    : { data: [] as { invoice_id: string; amount: number }[] };
+    : { data: [] as { invoice_id: string; amount: number }[], error: null };
   const dibayarExtra = new Map<string, number>();
   for (const p of (pays ?? []) as { invoice_id: string; amount: number }[]) {
     dibayarExtra.set(p.invoice_id, (dibayarExtra.get(p.invoice_id) ?? 0) + Number(p.amount));
@@ -155,5 +161,6 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
     customerName: one(acuan.customers as Rel<{ name: string }>)?.name ?? "—",
     tanggal,
     baris,
+    bacaanTagihanGagal: !!invsError || !Array.isArray(invs) || !!paysError || !Array.isArray(pays),
   };
 }
