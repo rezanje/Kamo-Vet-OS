@@ -32,6 +32,8 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   if (!rombongan) notFound();
 
   const ringkasan = ringkasTagihanRombongan(rombongan.baris);
+  // Tagihan/pembayaran yang gagal dibaca bukan "belum ditagih": dokumen ditahan.
+  if (rombongan.bacaanTagihanGagal) throw new Error("Verifikasi rincian tagihan gagal. Struk gabungan tidak dapat dicetak.");
 
   const { data: acuan } = await supabase
     .from("visits").select("branch_id, branches(name, code)").eq("id", visitId).maybeSingle();

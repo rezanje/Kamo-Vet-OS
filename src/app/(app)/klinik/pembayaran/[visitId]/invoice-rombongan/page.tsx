@@ -33,6 +33,8 @@ export default async function InvoiceRombonganPage({ params }: { params: Promise
   const rombongan = await bacaRombongan(supabase, visitId);
   if (!rombongan) notFound();
   const ringkasan = ringkasTagihanRombongan(rombongan.baris);
+  // Tagihan/pembayaran yang gagal dibaca bukan "belum ditagih": dokumen ditahan.
+  if (rombongan.bacaanTagihanGagal) throw new Error("Verifikasi rincian tagihan gagal. Invoice gabungan tidak dapat dicetak.");
 
   const { data: acuan, error: acuanError } = await supabase
     .from("visits").select("branch_id, branches(name, code)").eq("id", visitId).maybeSingle();
