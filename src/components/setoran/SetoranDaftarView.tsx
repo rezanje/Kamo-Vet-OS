@@ -4,6 +4,7 @@ import { bacaSaringan, muatAkses, muatCabang, muatDaftar, muatRekap, STATUS_FILT
 import { buatSetoran } from "@/lib/setoran-actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB } from "@/lib/tanggal";
+import { JUDUL_HALAMAN, SubJudul } from "./gaya";
 import { periodeBawaan, pesanSetoran, rp, tanggalPendek, warnaBadge, type BarisDaftar, type BasisSetoran, type RekapSetoran } from "@/lib/setoran";
 
 type SP = Record<string, string | undefined>;
@@ -17,7 +18,7 @@ function Lencana({ teks }: { teks: string }) {
 function RekapPanel({ r }: { r: RekapSetoran }) {
   return (
     <section className="card" aria-label="Rekap per cabang">
-      <h3 style={{ fontSize: 14, marginBottom: 8 }}>Rekap per cabang</h3>
+      <SubJudul>Rekap per cabang</SubJudul>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5, marginBottom: 8 }}>
         <span>Menunggu persetujuan: <strong data-testid="menunggu">{r.menunggu_persetujuan}</strong></span>
         <span>Terlambat: <strong>{r.terlambat}</strong></span>
@@ -30,7 +31,6 @@ function RekapPanel({ r }: { r: RekapSetoran }) {
             <tr style={{ fontWeight: 700 }}><td>Total</td><td>{r.total.jumlah}</td><td>{rp(r.total.kewajiban)}</td><td>{rp(r.total.pengeluaran)}</td><td>{rp(r.total.diharapkan)}</td><td>{rp(r.total.disetor)}</td><td data-testid="total-kurang">{rp(r.total.kurang)}</td><td data-testid="total-lebih">{rp(r.total.lebih)}</td></tr>
           </tbody></table>
       </div>
-      <p style={{ fontSize: 11.5, color: "var(--tm)", marginTop: 6 }}>Kurang/Lebih dihitung dari setoran yang sudah diajukan atau disetujui. Halaman ini hanya untuk Owner, Finance, Admin.</p>
     </section>
   );
 }
@@ -69,21 +69,21 @@ export async function SetoranDaftarView({ basis, sp }: { basis: BasisSetoran; sp
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div><div className="pg-hd">Rekap Setoran</div><div className="pg-sub">Kewajiban setoran per periode, pengeluaran dari dana setoran, dan penutupan oleh Finance</div>
-        {akses.penyetuju && <div style={{ marginTop: 6, fontSize: 13 }}><Link href="/kas-bank/setoran/riwayat" data-testid="tautan-riwayat">Riwayat Setoran (per hari, kas toko) →</Link> <span style={{ fontSize: 11.5, color: "var(--tm)" }}>tampilan awal, hanya lihat</span></div>}</div>
+      <div><div className="pg-hd" data-judul-halaman style={JUDUL_HALAMAN}>Rekap Setoran</div>
+        {akses.penyetuju && <div style={{ marginTop: 6, fontSize: 13 }}><Link href="/kas-bank/setoran/riwayat" data-testid="tautan-riwayat">Riwayat Setoran (per hari, kas toko) →</Link></div>}</div>
       {galat && <div className="p2ban" role="alert" style={{ background: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }}>{galat}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
 
       {akses.penyetuju && inbox.length > 0 && (
         <section className="card" aria-label="Menunggu persetujuan" style={{ borderColor: "#93c5fd" }}>
-          <h3 style={{ fontSize: 14, marginBottom: 6 }}>Menunggu persetujuan ({inbox.length})</h3>
+          <SubJudul>Menunggu persetujuan ({inbox.length})</SubJudul>
           {inbox.map((b) => <div key={b.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: ".5px solid var(--bd)", fontSize: 13, flexWrap: "wrap" }}>
             <span><Link href={`${basis}/${b.id}`}>{b.no_setoran}</Link> · {b.cabang} · diajukan {b.umur_hari ?? 0} hari lalu · dibuat {b.dibuat_oleh}</span><strong>{rp(b.kewajiban)}</strong></div>)}
         </section>
       )}
 
       <section className="card" aria-label="Buat periode setoran">
-        <h3 style={{ fontSize: 14, marginBottom: 6 }}>Buat periode setoran</h3>
+        <SubJudul>Buat periode setoran</SubJudul>
         <form action={buatSetoran} style={{ display: "grid", gap: 10 }}>
           <input type="hidden" name="basis" value={basis} /><input type="hidden" name="request_key" value={crypto.randomUUID()} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
@@ -93,7 +93,7 @@ export async function SetoranDaftarView({ basis, sp }: { basis: BasisSetoran; sp
             <label style={lbl}>Jadwal setoran<input className="fi" type="date" name="jadwal" required defaultValue={bawaan.jadwal} /></label>
             <label style={lbl}>Batas jam<input className="fi" type="time" name="jam" defaultValue="12:00" required /></label>
           </div>
-          <div><SubmitButton className="btn-acc" pendingText="Membuat…">Buat periode</SubmitButton> <span style={{ fontSize: 12, color: "var(--tm)" }}>Shift yang sudah ditutup di periode itu otomatis dihitung.</span></div>
+          <div><SubmitButton className="btn-acc" pendingText="Membuat…">Buat periode</SubmitButton></div>
         </form>
       </section>
 
@@ -109,6 +109,7 @@ export async function SetoranDaftarView({ basis, sp }: { basis: BasisSetoran; sp
       {rekap && <RekapPanel r={rekap} />}
 
       <section className="card" aria-label="Daftar setoran">
+        <SubJudul>Daftar setoran</SubJudul>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl">
             <thead><tr><th>No</th><th>Cabang</th><th>Periode</th><th>Jadwal</th><th>Kewajiban</th><th>Sisa</th><th>Status</th>{akses.penyetuju && <th>Selisih</th>}{akses.penyetuju && <th>Menunggu</th>}</tr></thead>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { JUDUL_HALAMAN, SubJudul } from "./gaya";
 import { RingkasanKartu, TabelHarian, TabelPeriode } from "./SetoranRiwayatTabel";
 import { createClient, createClientLintasCabang } from "@/lib/supabase/server";
 import { muatAkses, muatDaftar } from "@/lib/setoran-server";
@@ -16,8 +17,7 @@ export async function SetoranRiwayatView({ sp }: { sp: SP }) {
   const basis = "/kas-bank/setoran";
   const kepala = (
     <div>
-      <div className="pg-hd">Riwayat Setoran</div>
-      <div className="pg-sub">Per hari: berapa yang harus disetor, berapa yang sudah ditransfer dari kas toko, dan kelebihan/kekurangannya</div>
+      <div className="pg-hd" data-judul-halaman style={JUDUL_HALAMAN}>Riwayat Setoran</div>
     </div>
   );
   if (!akses.masuk || !akses.penyetuju) return <div style={{ display: "grid", gap: 12 }}>{kepala}<div className="card"><p>Halaman ini hanya untuk Owner, Finance, dan Admin.</p></div></div>;
@@ -65,7 +65,7 @@ export async function SetoranRiwayatView({ sp }: { sp: SP }) {
           <div style={{ fontSize: 12.5, color: "var(--tm)" }} data-testid="info-akun">{cabangPilih.terpilih.name} · kas toko: {hasil.akun.nama} (akun {hasil.akun.coa_code}) · {tanggalPendek(f.dari)} s/d {tanggalPendek(f.sampai)}</div>
           <RingkasanKartu r={hasil.hitung.ringkasan} namaAkun={hasil.akun.nama} />
           <section className="card" aria-label="Riwayat per hari">
-            <h3 style={{ fontSize: 14, marginBottom: 6 }}>Per hari</h3>
+            <SubJudul>Per hari</SubJudul>
             <TabelHarian hari={hasil.hitung.hari} />
             <p style={{ fontSize: 11.5, color: "var(--tm)", marginTop: 6 }}>
               Tanggal menurut WIB. Hanya hari yang ada shift ditutup atau mutasi kas yang tampil. Selisih setor harian positif = kelebihan setor (ditransfer lebih besar dari yang harus disetor), negatif = kekurangan setor. Kumulatif dihitung sejak tanggal Dari. Pengeluaran diambil dari jurnal pengeluaran di akun kas toko; bila pengeluaran itu sudah terpotong di kas tutup shift, Harus disetor bisa terlalu kecil, mohon dicek.
@@ -75,7 +75,7 @@ export async function SetoranRiwayatView({ sp }: { sp: SP }) {
       )}
       {cabangPilih.terpilih && (
         <section className="card" aria-label="Periode setoran tercatat">
-          <h3 style={{ fontSize: 14, marginBottom: 6 }}>Periode setoran tercatat</h3>
+          <SubJudul>Periode setoran tercatat</SubJudul>
           <TabelPeriode baris={periode} basis={basis} />
         </section>
       )}

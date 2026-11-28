@@ -3,6 +3,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { KATEGORI_PENGELUARAN } from "@/lib/kategori-pengeluaran";
+import { SubJudul } from "./gaya";
 import { bisaDiedit, bolehVoid, rp, tanggalPendek, type BasisSetoran, type DetailSetoran, type Lampiran } from "@/lib/setoran";
 import {
   ajukanSetoran, batalkanDraftSetoran, hapusPengeluaranSetoran, hapusTransferSetoran, putuskanTransferSetoran, setujuiSetoran, sinkronSetoran,
@@ -34,8 +35,7 @@ export function DaftarPengeluaran({ d, basis, kunci, urls }: { d: DetailSetoran;
   const edit = bisaDiedit(d.status);
   return (
     <section className="card" aria-label="Pengeluaran dari dana setoran">
-      <h3 style={{ fontSize: 14, marginBottom: 6 }}>Pengeluaran dari dana setoran</h3>
-      <p style={{ fontSize: 12, color: "var(--tm)", marginBottom: 8 }}>Pengeluaran yang dibayar dari uang setoran ini. Mengurangi sisa kewajiban, dibukukan sebagai beban pada tanggalnya sendiri saat setoran disetujui (satu kali, lewat jalur pengeluaran yang sama dengan Kasir).</p>
+      <SubJudul>Pengeluaran dari dana setoran</SubJudul>
       {d.pengeluaran_baris.length === 0 && <p style={{ fontSize: 12.5 }}>Belum ada pengeluaran.</p>}
       {d.pengeluaran_baris.map((p) => (
         <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: ".5px solid var(--bd)", flexWrap: "wrap" }}>
@@ -71,8 +71,7 @@ export function DaftarTransfer({ d, basis, kunci, rekening, penyetuju, urls }: {
   const keputusanBuka = penyetuju && (edit || d.status === "Diajukan");
   return (
     <section className="card" aria-label="Setoran ke perusahaan">
-      <h3 style={{ fontSize: 14, marginBottom: 6 }}>Setoran ke perusahaan</h3>
-      <p style={{ fontSize: 12, color: "var(--tm)", marginBottom: 8 }}>Boleh dicicil. Setiap setoran menunggu konfirmasi Finance bahwa uangnya sudah masuk; hanya yang dikonfirmasi dihitung saat periode ditutup.</p>
+      <SubJudul>Setoran ke perusahaan</SubJudul>
       {d.transfer_baris.length === 0 && <p style={{ fontSize: 12.5 }}>Belum ada setoran dicatat.</p>}
       {d.transfer_baris.map((t) => (
         <div key={t.id} style={{ padding: "8px 0", borderBottom: ".5px solid var(--bd)" }}>
@@ -133,7 +132,6 @@ export function AksiPetugas({ d, basis, kunci }: { d: DetailSetoran; basis: Basi
           <form action={ajukanSetoran} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <Tersembunyi d={d} basis={basis} kunci={kunci} nama="ajukan" />
             <SubmitButton className="btn-acc" pendingText="Mengajukan…">Selesai disetor — ajukan penutupan</SubmitButton>
-            <span style={{ fontSize: 12, color: "var(--tm)" }}>Ajukan bila semua uang sudah disetor dan dicatat di atas.</span>
           </form>
           <details>
             <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Buang setoran ini</summary>
@@ -162,7 +160,7 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
   const diblokir = k.peringatan.some((w) => w.tingkat === "blokir");
   return (
     <section className="card" aria-label="Penutupan periode (Finance)" style={{ borderColor: warna }}>
-      <h3 style={{ fontSize: 14, marginBottom: 8 }}>Penutupan periode — khusus Finance / penyetuju</h3>
+      <SubJudul>Penutupan periode — khusus Finance / penyetuju</SubJudul>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 8 }}>
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Harus disetor (kewajiban − pengeluaran)</div><strong>{rp(k.diharapkan)}</strong></div>
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Uang masuk terkonfirmasi</div><strong>{rp(k.transfer_dikonfirmasi)}</strong></div>
@@ -184,7 +182,6 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
           <table className="tbl"><thead><tr><th>Kasir</th><th>Tutup</th><th>Modal</th><th>Kas fisik tutup</th><th>Selisih tutup shift</th><th>Bersih</th></tr></thead>
             <tbody>{k.rincian_shift.map((s, i) => <tr key={i}><td>{String(s.kasir)}</td><td>{tanggalPendek(String(s.ditutup))}</td><td>{rp(Number(s.modal_awal))}</td><td>{rp(Number(s.kas_fisik_tutup))}</td><td>{rp(Number(s.selisih_tutup))}</td><td>{rp(Number(s.bersih))}</td></tr>)}</tbody></table>
         </div>
-        <p style={{ fontSize: 11.5, color: "var(--tm)" }}>Selisih tutup shift sudah dibukukan saat tutup shift; di sini tidak dijurnal lagi.</p>
       </details>
 
       {d.status === "Diajukan" && (
@@ -201,7 +198,7 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
             {jenis === "Kurang" && (
               <fieldset style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: 10 }}>
                 <legend style={{ fontSize: 12.5 }}>Kurang {rp(Math.abs(sel))} → kasbon karyawan (Dr 182001 Cashbon Karyawan / Cr Kas)</legend>
-                <p style={{ fontSize: 12, color: "var(--tm)" }}>Otomatis dibagi rata ke kasir shift: {k.penanggung_otomatis.length ? k.penanggung_otomatis.map((e) => e.nama).join(", ") : <strong>tidak ada karyawan tertaut — pilih manual atau beban perusahaan</strong>}. Isi di bawah hanya bila ingin menimpa.</p>
+                <p style={{ fontSize: 12.5 }}>Otomatis dibagi rata ke kasir shift: {k.penanggung_otomatis.length ? k.penanggung_otomatis.map((e) => e.nama).join(", ") : <strong>tidak ada karyawan tertaut — pilih manual atau beban perusahaan</strong>}.</p>
                 {[1, 2, 3].map((i) => (
                   <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <select className="fi" name={`employee_${i}`} defaultValue="" style={{ flex: "2 1 160px" }}><option value="">— karyawan {i} —</option>{karyawan.map((e) => <option key={e.id} value={e.id}>{e.nama}</option>)}</select>

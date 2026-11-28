@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { labelSelisihSetor, type BarisHari, type RingkasanRiwayat } from "@/lib/setoran-riwayat";
+import { SubJudul } from "./gaya";
 import { rp, tanggalPendek, warnaBadge, type BarisDaftar } from "@/lib/setoran";
 
 const kanan: React.CSSProperties = { textAlign: "right", whiteSpace: "nowrap" };
@@ -24,7 +25,7 @@ export function RingkasanKartu({ r, namaAkun }: { r: RingkasanRiwayat; namaAkun:
         <Kartu tid="kumulatif" judul={`${labelSelisihSetor(r.kumulatif)} (kumulatif)`} nilai={rp(Math.abs(r.kumulatif))} warna={warnaSelisih(r.kumulatif)} catatan="Kelebihan = yang ditransfer lebih besar dari yang harus disetor. Dihitung sejak tanggal Dari." />
       </div>
       <div className="card" style={{ padding: 12 }} aria-label="Saldo kas toko dan uraian selisih">
-        <h3 style={{ fontSize: 14, marginBottom: 6 }}>Saldo kas toko di Buku Besar dan kas yang seharusnya ada</h3>
+        <SubJudul>Saldo kas toko di Buku Besar dan kas yang seharusnya ada</SubJudul>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, marginBottom: 8 }}>
           <Kartu tid="saldo-buku" judul={`Saldo ${namaAkun} di Buku Besar (akhir)`} nilai={rp(r.saldoAkhir)} />
           <Kartu tid="kas-seharusnya" judul="Kas yang seharusnya ada" nilai={rp(r.kasSeharusnya)} catatan="Harus disetor dikurangi sudah ditransfer, sejak tanggal Dari" />
