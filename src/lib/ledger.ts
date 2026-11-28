@@ -158,6 +158,39 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
     .sort((x, y) => (TYPE_ORDER.indexOf(x.type) - TYPE_ORDER.indexOf(y.type)) || x.code.localeCompare(y.code));
 }
 
+// ── Tampilan Ringkasan Buku Besar: semua akun / hanya yang ada angkanya ──
+// Hanya penyaring TAMPILAN baris; angka dan total tabel tidak diubah. Param URL dipakai
+// `tampilan` (bukan `tampil`, itu gerbang laporan di report-gate.ts).
+export const PARAM_TAMPILAN_AKUN = "tampilan";
+export type TampilanAkun = "berangka" | "semua";
+/** Bawaan: ringkas (hanya akun yang ada angkanya). Hanya `semua` persis yang membuka seluruh akun. */
+export function parseTampilanAkun(v: string | string[] | undefined | null): TampilanAkun {
+  const nilai = Array.isArray(v) ? v[0] : v;
+  return nilai === "semua" ? "semua" : "berangka";
+}
+/**
+ * Angka dianggap nol bila setelah dibulatkan ke rupiah (cara kolom di halaman menampilkannya)
+ * hasilnya 0 — termasuk -0 dan sisa pecahan di bawah Rp 0,5 yang tampil "Rp -0". Nilai tak
+ * hingga (NaN) dianggap ada, supaya data rusak tidak ikut tersembunyi.
+ */
+export function adaAngka(n: number): boolean {
+  return !Number.isFinite(n) || Math.round(n) !== 0;
+}
+/** Satu akun "ada angkanya" bila Saldo Awal, Debit, Kredit atau Saldo Akhir (awal + saldo) tidak nol. */
+export function akunAdaAngka(b: { debit: number; credit: number; saldo: number }, awal = 0): boolean {
+  return adaAngka(awal) || adaAngka(b.debit) || adaAngka(b.credit) || adaAngka(awal + b.saldo);
+}
+/**
+ * Baris yang ditampilkan. Akun induk/header memakai uji yang sama dengan akun lain (angka per akun,
+ * bukan gabungan turunan). `selalu` = kode akun yang harus tetap tampil walau nol (akun yang sedang dibuka).
+ */
+export function saringAkunTampil<T extends { id: string; code: string; debit: number; credit: number; saldo: number }>(
+  balances: T[], awalOf: (id: string) => number, tampilan: TampilanAkun, selalu?: string | null,
+): T[] {
+  if (tampilan === "semua") return balances;
+  return balances.filter((b) => b.code === selalu || akunAdaAngka(b, awalOf(b.id)));
+}
+
 export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; source: string; source_ref: string; branch_id: string | null; branch_name: string; debit: number; credit: number };
 
 function branchName(entry: RawLine["journal_entries"]): string {
