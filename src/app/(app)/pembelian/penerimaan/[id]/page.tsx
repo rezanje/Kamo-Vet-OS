@@ -1,5 +1,5 @@
 import { DocumentBackLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
@@ -76,7 +76,7 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
       {sp?.success && <div role="status" className="p2ban no-print">{sp.success}</div>}
       {sp?.error && <div role="alert" className="p2ban no-print">{sp.error}</div>}
       <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian/penerimaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href="/pembelian/penerimaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{data.no_terima}</span>
         <span style={{ marginLeft: "auto" }}><PrintButton label="Cetak tanda terima" /></span>

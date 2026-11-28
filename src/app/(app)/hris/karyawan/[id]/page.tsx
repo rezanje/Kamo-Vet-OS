@@ -1,6 +1,7 @@
 import { NumberInput } from "@/components/NumberInput";
 import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -119,7 +120,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     ...(aturGaji ? [["gaji_pokok", "Gaji Pokok (Rp)", "number"] as const] : []),
   ] as const;
   return <>
-    <Link href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</Link>
+    <BackLink href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</BackLink>
     {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
     {success && <div role="status" className="p2ban" style={{ color: "#15803d" }}>{success === "benefit" ? "Benefit karyawan berhasil diperbarui." : "Data karyawan berhasil diperbarui."}</div>}
     {beda && <div role="alert" className="p2ban" data-testid="peran-vs-jabatan" style={{ color: "#b45309", marginTop: 8 }}>

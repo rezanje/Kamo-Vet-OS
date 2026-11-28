@@ -2,7 +2,7 @@
 
 import { NumberInput } from "@/components/NumberInput";
 
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { useEffect, useMemo, useState } from "react";
 import { PreservedForm } from "@/components/LocalTransactionDraft";
 import { TransactionDraft, draftRows, transactionDraftName } from "@/components/TransactionDraft";
@@ -100,9 +100,9 @@ function PersediaanBaruFields({ userId, branchId, branchName, warehouses, items,
             <div style={{ fontSize: 11.5, color: "var(--tm)", marginTop: 1 }}>Ajukan permintaan barang ke gudang pusat</div>
           </div>
         </div>
-        <Link href="/kasir/persediaan" className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
+        <BackLink href="/kasir/persediaan" className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
       </div>
 
       {/* INFORMASI PERMINTAAN — baris field horizontal */}

@@ -142,7 +142,7 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, retensi = null, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
+export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, retensi = null, categories, statusUlasan, cariAwal = "", pilihAwal, total, stats, halaman, hanyaTersembunyi = false }: {
   /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
   /** Jumlah pelanggan yang cocok dengan pencarian. */
@@ -159,6 +159,8 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, r
   statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
+  /** Pelanggan yang terakhir dipilih (?pilih=): dipulihkan saat Kembali dari halaman lain. */
+  pilihAwal?: string;
   /** Daftar hanya menampilkan pelanggan yang disembunyikan dari kasir. */
   hanyaTersembunyi?: boolean;
 }) {
@@ -167,7 +169,7 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, r
   const [memuat, startMemuat] = useTransition();
   // Pelanggan terpilih disimpan utuh supaya detailnya tetap tampil walau halaman/pencarian
   // daftar berganti; bila ada di daftar terbaru, data terbarunya yang dipakai.
-  const [selSimpan, setSelSimpan] = useState<CustomerRow | null>(customers[0] ?? null);
+  const [selSimpan, setSelSimpan] = useState<CustomerRow | null>(customers.find((c) => c.id === pilihAwal) ?? customers[0] ?? null);
   const selId = selSimpan?.id ?? null;
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
@@ -209,6 +211,10 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, r
   const pilihPelanggan = (id: string) => {
     const row = customers.find((c) => c.id === id);
     if (row) setSelSimpan(row);
+    // Cerminkan pilihan ke alamat (tanpa memuat ulang) supaya Kembali dari riwayat medis/halaman lain membukanya lagi.
+    const params = new URLSearchParams(window.location.search);
+    params.set("pilih", id);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
     requestAnimationFrame(() => {
       detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });

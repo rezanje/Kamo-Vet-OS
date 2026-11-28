@@ -7,6 +7,7 @@ import { notificationActiveFor, type NotificationRow } from "@/lib/notifications
 import { PosNav } from "./PosNav";
 import { NotifBanner } from "./NotifBanner";
 import { ActiveBranch } from "@/components/ActiveBranch";
+import { JejakDaftar } from "@/components/JejakDaftar";
 
 // Dunia POS kasir: shell sendiri (tanpa sidebar VetOS), top-nav Kasir/Pengeluaran/Persediaan.
 export default async function KasirLayout({ children }: { children: React.ReactNode }) {
@@ -31,7 +32,7 @@ export default async function KasirLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <DraftUserProvider userId={user.id}><Suspense fallback={null}><TransactionDraftComplete userId={user.id}/></Suspense><div className="kasir-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
+    <DraftUserProvider userId={user.id}><Suspense fallback={null}><TransactionDraftComplete userId={user.id}/></Suspense><Suspense fallback={null}><JejakDaftar /></Suspense><div className="kasir-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
       <PosNav
         branchName={shift?.branchName ?? null}
         userName={(profile?.full_name ?? user.email ?? "Kasir").split(" ")[0]}

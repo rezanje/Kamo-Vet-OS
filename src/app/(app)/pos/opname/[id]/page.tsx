@@ -3,6 +3,7 @@ import { ListLoadFailure } from "@/components/ListPagination";
 import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
 import { opnameCancellationBlock, opnameWarehouseIds, type OpnameCancellation } from "@/lib/opname-cancellation";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -60,9 +61,9 @@ export default async function OpnameDetailPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pos/opname" className="back-btn">
+        <BackLink href="/pos/opname" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{order.no_opname}</span>
         <span className={`bge ${order.status === "Selesai" ? "g" : "o"}`}>{order.status}</span>

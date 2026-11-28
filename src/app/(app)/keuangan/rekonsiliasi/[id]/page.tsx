@@ -1,5 +1,5 @@
 import { BankReconciliationRecovery } from "../BankReconciliationRecovery";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAccountBalances } from "@/lib/ledger";
@@ -31,7 +31,7 @@ export default async function RekonsiliasiDetail({ params, searchParams }: {
   const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID", {maximumFractionDigits:2})}`;
   return <>
     <BankReconciliationRecovery userId={user.id}/>
-    <Link href="/keuangan/rekonsiliasi" className="back-btn">Kembali ke rekonsiliasi</Link>
+    <BackLink href="/keuangan/rekonsiliasi" className="back-btn">Kembali ke rekonsiliasi</BackLink>
     <h2>Rekonsiliasi {record.tanggal}</h2>
     {success && <div className="p2ban" role="status">{record.voided_at ? "Rekonsiliasi dibatalkan; penyesuaian lama sudah dibalik." : "Rekonsiliasi tersimpan beserta penyesuaiannya."}</div>}
     {error && <div className="p2ban" role="alert">{error}</div>}

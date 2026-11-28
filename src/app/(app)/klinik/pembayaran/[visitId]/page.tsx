@@ -21,6 +21,7 @@ import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-paymen
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -478,7 +479,7 @@ export default async function PembayaranPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Antrian</Link>
+        <BackLink href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Antrian</BackLink>
       </div>
       <PaymentPageHeading />
 

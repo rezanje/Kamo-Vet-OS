@@ -1,5 +1,6 @@
 import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -87,9 +88,9 @@ export default async function PenjualanOnlinePage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/penjualan" className="back-btn">
+        <BackLink href="/penjualan" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Penjualan Online</span>
       </div>

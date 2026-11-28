@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   estimasiHasil, parseBulat, parsePaketForm, ringkasPaket, rp, validatePaketForm, PESAN_STALE,
@@ -345,7 +345,7 @@ export function PaketEditor({ userId, mode, promoId, version: initialVersion, in
         {!id && <span className={s.hint}>Simpan sebagai draf dulu, lalu Aktifkan.</span>}
         {id && <button type="button" className="btn-def" disabled={busy || dirty} onClick={salin} title={dirty ? "Simpan perubahan dulu: salinan memakai isi yang sudah tersimpan" : "Buat salinan sebagai draf baru (nonaktif)"}>Salin promo</button>}
         <span className={s.grow} />
-        <Link className="back-btn" href="/crm/promo">Kembali ke daftar promo</Link>
+        <BackLink className="back-btn" href="/crm/promo">Kembali ke daftar promo</BackLink>
       </div>
     </div>
   );

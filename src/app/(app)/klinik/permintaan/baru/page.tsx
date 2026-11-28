@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -27,7 +27,7 @@ export default async function KlinikPermintaanBaruPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/klinik/permintaan" className="back-btn"><i className="ti ti-arrow-left" /> Permintaan Barang</Link>
+        <BackLink href="/klinik/permintaan" className="back-btn"><i className="ti ti-arrow-left" /> Permintaan Barang</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Permintaan Baru</span>
       </div>

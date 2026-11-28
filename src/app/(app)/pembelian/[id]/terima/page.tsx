@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TerimaForm, type BarisPO } from "./TerimaForm";
@@ -73,9 +73,9 @@ export default async function TerimaBarangPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian" className="back-btn">
+        <BackLink href="/pembelian" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Terima Barang · {po.no_po ?? id.slice(0, 8)}</span>
       </div>

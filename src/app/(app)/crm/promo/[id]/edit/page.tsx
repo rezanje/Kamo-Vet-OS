@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { BackLink } from "@/components/BackLink";
 import {redirect} from 'next/navigation';
 import {createClient} from '@/lib/supabase/server';
 import {readCompleteList} from '@/lib/checked-list';
@@ -8,7 +8,7 @@ import type {MultiSelectItem} from '@/components/SearchableMultiSelect';
 import {packageTotalReleased,type PromoEditSnapshot} from '@/lib/promo-edit';
 import {ActivityHistoryLink} from '@/components/ActivityHistoryLink';
 import {PromoEditor} from '../../PromoEditor';
-const back=<Link className="back-btn" href="/crm/promo">Kembali ke daftar promo</Link>;
+const back=<BackLink className="back-btn" href="/crm/promo">Kembali ke daftar promo</BackLink>;
 async function loadOptions(db:Awaited<ReturnType<typeof createClient>>,snapshot:PromoEditSnapshot){
   const [activeItems,branches,categoryRows]=await Promise.all([
    readCompleteList<PromoCategoryItem>((from,to)=>db.from('items').select('id,code,name,category_id',{count:'exact'}).eq('is_active',true).order('name').order('id').range(from,to),'Daftar barang promo',{maxRows:null}),

@@ -9,6 +9,7 @@ import { PurchasePriceInput } from "@/components/PurchasePriceInput";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { useEffect, useRef, useState } from "react";
 import type { WarehouseStock } from "@/lib/warehouse-stock";
 import { WarehouseStockHint } from "@/components/WarehouseStockHint";
@@ -269,9 +270,9 @@ export function POForm({
 
       <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
+        <BackLink href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal
-        </Link>
+        </BackLink>
         <button type="submit" className="btn-acc">
           <i className="ti ti-device-floppy" /> Simpan PO
         </button>

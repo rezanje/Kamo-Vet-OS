@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -78,7 +79,7 @@ export default async function MutasiRekeningPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }} className="no-print">
-        <Link href="/kas-bank/rekening" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href="/kas-bank/rekening" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Buku Mutasi Rekening</span>
         {profile?.is_active && profile.role === "OWNER" && <Link href={`/kas-bank/rekening/${id}/saldo-awal`} className="back-btn">Koreksi saldo awal</Link>}

@@ -1,5 +1,5 @@
 import { mulai } from "@/lib/u07-waktu";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
@@ -155,9 +155,9 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <Link href="/klinik/antrian" className="back-btn" style={{ fontSize: 13 }}>
+        <BackLink href="/klinik/antrian" className="back-btn" style={{ fontSize: 13 }}>
           <i className="ti ti-arrow-left" /> Kembali ke Antrian
-        </Link>
+        </BackLink>
         <span style={{ fontSize: 11, color: "var(--td)" }}>Antrian Pasien › Detail Pasien</span>
       </div>
 

@@ -2,6 +2,7 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink, DocumentLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
 import { documentAnchor } from "@/lib/related-document-routes";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
@@ -90,7 +91,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   return <>
     <DocumentBackLink from={sp.from} />
     <ActivityHistoryLink entity="purchase_invoices" id={id} />
-    <Link className="back-btn" href="/pembelian/faktur">Kembali ke faktur pembelian</Link>
+    <BackLink className="back-btn" href="/pembelian/faktur">Kembali ke faktur pembelian</BackLink>
     {sp.success && <div role="status" className="p2ban">{sp.success}</div>}
     {sp.error && <div role="alert" className="p2ban">{sp.error}</div>}
     <section className="crm-sec">

@@ -6,6 +6,7 @@ import { ItemReferenceField } from "@/components/ItemReferenceField";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 import { ITEM_TYPES, ITEM_TYPE_HINT, type ItemType } from "@/lib/barang";
@@ -540,7 +541,7 @@ export function BarangForm({
         <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
           Simpan barang
         </SubmitButton>
-        <Link href="/pos/sku" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>
+        <BackLink href="/pos/sku" className="btn-def" style={{ textDecoration: "none" }}>Batal</BackLink>
       </div>
     </form>
   );

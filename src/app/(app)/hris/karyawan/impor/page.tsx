@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { SecHeader } from "@/components/SecHeader";
 import { createClient } from "@/lib/supabase/server";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -19,9 +19,9 @@ export default async function ImporKaryawanPage({
 
   return (
     <>
-      <Link href="/hris/karyawan" className="back-btn">
+      <BackLink href="/hris/karyawan" className="back-btn">
         <i className="ti ti-arrow-left" /> Kembali ke Karyawan
-      </Link>
+      </BackLink>
       <div className="crm-sec" style={{ marginTop: 12 }}>
         <SecHeader num="01" title="UNGGAH DATA KARYAWAN" desc="Masukkan banyak karyawan dari Format Data Karyawan.xlsx." />
         {error && <div className="p2ban" style={{ background: "#fef2f2", color: "#b91c1c" }}>{error}</div>}

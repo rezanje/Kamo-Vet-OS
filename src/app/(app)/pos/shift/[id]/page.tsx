@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
@@ -18,7 +18,7 @@ export default async function LaporanShiftPage({ params }: { params: Promise<{ i
   return (
     <>
       <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
-        <Link href="/pos/shift/riwayat" className="back-btn"><i className="ti ti-arrow-left" /> Riwayat Tutup Shift</Link>
+        <BackLink href="/pos/shift/riwayat" className="back-btn"><i className="ti ti-arrow-left" /> Riwayat Tutup Shift</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Laporan Shift</span>
         <div style={{ marginLeft: "auto" }}><PrintButton /></div>

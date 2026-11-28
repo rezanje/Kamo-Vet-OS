@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -47,7 +48,7 @@ export default async function PurchaseCorrectionQueuePage({ searchParams }: {
 
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-      <Link href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Pembelian</Link>
+      <BackLink href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Pembelian</BackLink>
       <span style={{ color: "var(--td)" }}>·</span>
       <span style={{ fontSize: 13, fontWeight: 500 }}>{owner ? "Permintaan koreksi pembelian" : "Permintaan koreksi saya"}</span>
     </div>

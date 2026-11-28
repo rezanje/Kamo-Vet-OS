@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { NumberInput } from "@/components/NumberInput";
 import { previewPromoExcel, savePromoExcelBatch, validatePromoDraft } from "./actions";
 import type { PromoExcelRow } from "@/lib/promo-excel";
@@ -111,7 +112,7 @@ export function PromoImportWorkspace({branches,today}:{branches:Branch[];today:s
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <button type="button" className="btn-def" disabled={busy||saved} onClick={validate}>Validasi ulang</button>
         <button type="button" className="btn-acc" disabled={busy||!valid||saved} onClick={save}>{busy?"Memproses…":"Simpan seluruh batch"}</button>
-        {saved&&<Link href="/crm/promo" className="back-btn">Lihat daftar promo</Link>}
+        {saved&&<BackLink href="/crm/promo" className="back-btn">Lihat daftar promo</BackLink>}
       </div>
     </>}
   </div>;

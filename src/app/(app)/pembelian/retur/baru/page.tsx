@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { returnSourceRows, type PriorReturn } from "@/lib/return-source-units";
 import { qtyDiterima } from "@/lib/penerimaan";
@@ -50,9 +50,9 @@ export default async function ReturBeliBaruPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian/retur" className="back-btn">
+        <BackLink href="/pembelian/retur" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Buat Retur Pembelian</span>
       </div>

@@ -1,5 +1,6 @@
 import { PurchasePaymentForm, type PurchasePaymentDefaults } from "@/components/PurchasePaymentForm";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, TANPA_TANGGAL, agingFaktur, type AgingBucket, type AgingBucketFaktur } from "@/lib/aging";
@@ -46,9 +47,9 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
           <InputTampil />
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
         </form>
-        <Link href="/keuangan/hutang/pembantu" className="back-btn">
+        <BackLink href="/keuangan/hutang/pembantu" className="back-btn">
           <i className="ti ti-book-2" /> Buku Besar Pembantu
-        </Link>
+        </BackLink>
       </div>
 
       {success && (

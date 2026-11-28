@@ -1,7 +1,7 @@
 // Kerangka halaman master data: tombol kembali, judul berikon, banner
 // error/sukses/read-only. Isi form & tabel dikirim sebagai children karena
 // field tiap master berbeda — sengaja TIDAK bikin tabel generik.
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import type { ReactNode } from "react";
 import { StokKurangDariPesan } from "./StokKurangPopup";
 
@@ -27,7 +27,7 @@ export function MasterPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href={back} className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <BackLink href={back} className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>

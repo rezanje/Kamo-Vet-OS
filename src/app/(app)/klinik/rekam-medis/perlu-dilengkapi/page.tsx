@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import {
   bacaDaftarKartuTertunda, bolehKelolaKartuTertunda, HALAMAN_KARTU_TERTUNDA, KartuTertundaGagal, LABEL_KEKURANGAN,
@@ -38,7 +39,7 @@ export default async function KartuPerluDilengkapiPage({
   const kepala = (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <Link href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</Link>
+        <BackLink href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 12, fontWeight: 600 }}>Perlu dilengkapi</span>
       </div>

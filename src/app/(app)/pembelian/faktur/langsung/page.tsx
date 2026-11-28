@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
@@ -90,9 +90,9 @@ export default async function FakturLangsungPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pembelian/faktur" className="back-btn">
+        <BackLink href="/pembelian/faktur" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Faktur Pembelian Langsung</span>
       </div>

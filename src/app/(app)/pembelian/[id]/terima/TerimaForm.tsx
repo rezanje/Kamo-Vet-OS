@@ -9,7 +9,7 @@ import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 // yang tidak sesuai. Kolom rusak dipisah dari kolom terima karena akibatnya beda:
 // yang baik masuk stok & jadi hutang, yang rusak cuma jadi bahan klaim ke pemasok.
 
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { terimaBarang } from "../../actions";
@@ -294,9 +294,9 @@ export function TerimaForm({
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
+        <BackLink href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal
-        </Link>
+        </BackLink>
         <button type="submit" className="btn-acc">
           <i className="ti ti-package-import" /> Simpan penerimaan
         </button>

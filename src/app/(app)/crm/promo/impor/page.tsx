@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -14,7 +14,7 @@ export default async function PromoImportPage() {
     .select("id,name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),
     "Cabang untuk impor promo",{maxRows:null}):[];
   return <>
-    <Link href="/crm/promo" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Promo</Link>
+    <BackLink href="/crm/promo" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Promo</BackLink>
     <div className="crm-sec" style={{marginTop:12}}>
       <SecHeader num="01" title="IMPOR PROMO EXCEL" desc="Satu baris untuk satu SKU, satuan, dan diskon. Seluruh batch disimpan bersama setelah preview." />
       {allowed?<PromoImportWorkspace branches={branches} today={hariIniWIB()}/>:

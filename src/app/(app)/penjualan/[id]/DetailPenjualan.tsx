@@ -1,5 +1,6 @@
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -181,7 +182,7 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Link href={online ? "/penjualan/online" : "/penjualan"} className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+          <BackLink href={online ? "/penjualan/online" : "/penjualan"} className="back-btn"><i className="ti ti-arrow-left" /> Kembali</BackLink>
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{sale.no_struk ?? "Penjualan"}</span>
         </div>

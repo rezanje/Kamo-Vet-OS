@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { Popup } from "@/components/Popup";
 import type { createClient } from "@/lib/supabase/server";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
@@ -63,7 +64,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  }));
  const settled=editable&&editable.quote.remaining===0&&editable.rows.length===0&&!data.history.some(i=>i.correction_pending);
  return <>
-  <Link className="back-btn" href="/klinik/rawat-inap">Status Rawat Inap</Link>
+  <BackLink className="back-btn" href="/klinik/rawat-inap">Status Rawat Inap</BackLink>
   <PaymentPageHeading />
   {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>

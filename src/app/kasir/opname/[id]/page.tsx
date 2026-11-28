@@ -2,7 +2,7 @@ import { opnameHasResult } from "@/lib/opname-result-presence";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
 import { opnameCancellationBlock, type OpnameCancellation } from "@/lib/opname-cancellation";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -66,9 +66,9 @@ export default async function OpnameKasirDetailPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <Link href="/kasir/opname" className="back-btn">
+        <BackLink href="/kasir/opname" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{order!.no_opname}</span>
         <span className={`bge ${order!.status === "Selesai" ? "g" : "o"}`}>{order!.status}</span>

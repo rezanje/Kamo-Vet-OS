@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { readCompleteList } from "@/lib/checked-list";
 import { TerimaForm } from "@/app/kasir/persediaan/terima/[id]/TerimaForm";
 import { terimaBarangKlinik } from "../../actions";
@@ -23,7 +23,7 @@ export default async function KlinikTerimaPage({ params }: { params: Promise<{ i
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
   if (!shift) redirect("/klinik/shift");
 
-  const unavailable = <div role="alert" className="p2ban">Data penerimaan belum dapat dimuat lengkap. Muat ulang sebelum menerima barang. <Link href="/klinik/penerimaan">Kembali ke penerimaan</Link></div>;
+  const unavailable = <div role="alert" className="p2ban">Data penerimaan belum dapat dimuat lengkap. Muat ulang sebelum menerima barang. <BackLink href="/klinik/penerimaan">Kembali ke penerimaan</BackLink></div>;
   const { data, error } = await supabase
     .from("stock_requests")
     .select("id, no_request, status, from_branch_id, warehouses!stock_requests_to_warehouse_id_fkey(name)")

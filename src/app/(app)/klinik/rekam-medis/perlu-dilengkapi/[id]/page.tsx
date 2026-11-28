@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -24,7 +25,7 @@ export default async function KartuTertundaPage({
   const { hp, error } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const kembali = <Link href="/klinik/rekam-medis/perlu-dilengkapi" className="back-btn"><i className="ti ti-arrow-left" /> Perlu dilengkapi</Link>;
+  const kembali = <BackLink href="/klinik/rekam-medis/perlu-dilengkapi" className="back-btn"><i className="ti ti-arrow-left" /> Perlu dilengkapi</BackLink>;
 
   let kartu: Awaited<ReturnType<typeof bacaKartuTertunda>> = null;
   let calon: CalonIdentitas | null = null;

@@ -1,5 +1,5 @@
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { createClient } from "@/lib/supabase/server";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PemindahanForm } from "./PemindahanForm";
@@ -24,9 +24,9 @@ export default async function PemindahanBaruPage({
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pos/pemindahan" className="back-btn">
+        <BackLink href="/pos/pemindahan" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
-        </Link>
+        </BackLink>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Kirim Barang</span>
       </div>

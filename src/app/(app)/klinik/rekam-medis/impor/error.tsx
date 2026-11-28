@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 
 export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
@@ -12,7 +12,7 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
         <button type="button" className="btn-acc" onClick={() => reset()} style={{ background: "var(--posb)" }}>
           <i className="ti ti-refresh" /> Coba buka ulang
         </button>
-        <Link href="/klinik/antrian" className="btn-def"><i className="ti ti-arrow-left" /> Kembali ke antrian</Link>
+        <BackLink href="/klinik/antrian" className="btn-def"><i className="ti ti-arrow-left" /> Kembali ke antrian</BackLink>
       </div>
     </div>
   );

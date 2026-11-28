@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import type { RiwayatBersama } from "@/lib/riwayat-bersama";
 
 /**
@@ -60,7 +61,7 @@ export function RekamMedisGagalDimuat() {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <Link href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</Link>
+        <BackLink href="/klinik/rekam-medis" className="back-btn"><i className="ti ti-arrow-left" /> Rekam medis</BackLink>
       </div>
       <div role="alert" className="p2ban" style={{ background: "#fef2f2", color: "#b91c1c" }}>
         Rekam medis belum dapat dimuat. Coba muat ulang.

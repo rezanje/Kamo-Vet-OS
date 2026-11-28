@@ -7,6 +7,7 @@ import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { ObatKhusus } from "./ObatKhusus";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -143,7 +144,7 @@ export default async function RawatInapDetailPage({
   return (
     <>
       <div style={{ marginBottom: 4 }}>
-        <Link href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Status Rawat Inap</Link>
+        <BackLink href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Status Rawat Inap</BackLink>
       </div>
 
       {/* Judul besar (gaya referensi) */}

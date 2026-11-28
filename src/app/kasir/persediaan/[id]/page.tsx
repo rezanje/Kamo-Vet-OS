@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -75,7 +76,7 @@ export default async function PersediaanDetailPage({ params }: { params: Promise
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <Link href="/kasir/persediaan?tab=permintaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Persediaan</Link>
+        <BackLink href="/kasir/persediaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Persediaan</BackLink>
         {req.status === "Dikirim" && (
           <Link href={`/kasir/persediaan/terima/${req.id}`} className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
             <i className="ti ti-package-import" /> Terima Barang

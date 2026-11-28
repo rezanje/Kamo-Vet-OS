@@ -1,5 +1,6 @@
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, bahanRacikanUntukKunjungan, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
@@ -146,7 +147,7 @@ export default async function RacikDetailPage({
   return (
     <>
       <div style={{ marginBottom: 4, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
+        <BackLink href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</BackLink>
         {visit && mr && <Link href={`/klinik/rekam-medis/${visit.id}/resep?record=${encodeURIComponent(mr.id)}`} className="btn-def" style={{ textDecoration: "none" }}>
           <i className="ti ti-printer" /> Cetak resep kunjungan
         </Link>}
